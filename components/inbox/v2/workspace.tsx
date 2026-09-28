@@ -127,7 +127,7 @@ import {
 import { ApprovedDetails, RecordBanner } from "./record-details";
 import Sheet from "./sheet";
 import InvoiceSheet from "./invoice-sheet";
-import RouteSwitchLoader from "./route-switch-loader";
+import { ExtractionLoader, RouteSwitchLoader } from "./document-loader";
 import {
   CountPill,
   DateField,
@@ -1918,8 +1918,15 @@ export default function Workspace() {
       `${getState().items.find((item) => item.id === x.id)?.form.voucherNo || x.file.name} approved. Ready to sync to Tally.`
     );
   };
+  /*
+    A document mid Post-as change is being re-read, so the table says so the
+    same way it does for a first read, and holds its cells until it lands.
+  */
+  const isSwitching = (item: Item) =>
+    !!item.routeSwitch && item.routeSwitch.until > Date.now();
   const canEditTableItem = (item: Item) =>
     !moduleRoute &&
+    !isSwitching(item) &&
     ["Needs Review", "Duplicate"].includes(item.status) &&
     state.permissions.includes(item.route);
 
@@ -2933,22 +2940,14 @@ export default function Workspace() {
                   </Button>
                 </EmptyState>
               ) : ["Received", "Extracting"].includes(item.status) ? (
-                <>
-                  <EmptyState
-                    title={
-                      item.status === "Received"
-                        ? `Queued: ${item.file.name}`
-                        : `Extracting ${item.file.name}`
-                    }
-                    icon={<Spinner className="h-5 w-5" />}
-                  >
-                    <p className={T.value}>
-                      {item.status === "Received"
-                        ? "File received — extraction is about to start."
-                        : "AI Accountant is reading the document, preparing its details, and suggesting the right voucher and ledgers."}
-                    </p>
-                  </EmptyState>
-                </>
+                /*
+                  Full width: there is no source to preview yet — the file is
+                  what is being read — so the loader takes the whole pane
+                  rather than sitting beside an empty viewer.
+                */
+                <div className="min-h-0 flex-1 overflow-auto">
+                  <ExtractionLoader item={item} />
+                </div>
               ) : item.status === "Failed" ? (
                 <>
                   <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(280px,40%)_1fr]">
@@ -4349,6 +4348,11 @@ export default function Workspace() {
                                         {age(x.received)}
                                       </span>
                                     </div>
+                                  ) : isSwitching(x) ? (
+                                    <StatusPill
+                                      status="Extracting"
+                                      className={tablePillClass}
+                                    />
                                   ) : x.status === "Needs Review" &&
                                     canEditTableItem(x) ? (
                                     // Needs Review → Approved is the one

@@ -1199,9 +1199,21 @@ export function manual(id: string) {
   );
 }
 const timers = new Set<string>();
+/**
+ * When each running extraction started and how long it is expected to take,
+ * for the loader's progress. Kept beside the timers rather than on the item:
+ * it is the timers' own schedule, and it resets with them on load.
+ */
+const extractionTimes = new Map<string, { startedAt: number; duration: number }>();
+export const extractionTiming = (id: string) => extractionTimes.get(id);
 export function scheduleExtraction(id: string) {
   if (timers.has(id)) return;
   timers.add(id);
+  extractionTimes.set(id, {
+    startedAt: Date.now(),
+    duration:
+      600 + (state.items.find((x) => x.id === id)?.extractionDelay || 1200),
+  });
   setTimeout(() => {
     const x = state.items.find((x) => x.id === id);
     if (!x || !["Received", "Extracting"].includes(x.status)) {

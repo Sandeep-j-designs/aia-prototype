@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, FileText, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  extractionTiming,
   finishRouteSwitch,
   ROUTE_LABELS,
   ROUTE_SWITCH_MS,
@@ -9,22 +10,150 @@ import {
   type Route,
 } from "./store";
 import { T } from "./ui";
-import s from "./route-switch-loader.module.css";
+import s from "./document-loader.module.css";
 
 /**
- * What a Post as change looks like while the backend re-reads the document
- * into the new voucher type — 20 seconds or more.
+ * The wait while AI Accountant reads a document — the first extraction, and
+ * the re-read a Post as change asks for.
  *
- * Drawn in the welcome card's "How it works" language: the source document on
- * the left being scanned, the sparkle tile carrying it across, and the new
- * voucher on the right filling its rows in as each step lands. The rows use
- * the document's own values, so the wait previews the result instead of
- * decorating it.
+ * Drawn in the welcome card's "How it works" language: the source on the left
+ * being scanned, the sparkle tile carrying it across, and the voucher on the
+ * right filling its rows in as each step lands. Both waits share this one
+ * component so they cannot drift into looking like different products.
  *
  * CSS and Lucide only. Motion is not in the production app, and this has to
  * transplant.
  */
-const STEPS: Record<Route, string[]> = {
+type Row = { label: string; value?: string; filled: boolean };
+type LoaderProps = {
+  source: { label: string; title: string; meta?: string[]; total?: string };
+  target: { label: string; rows: Row[]; total?: { text: string; filled: boolean } };
+  heading: string;
+  stepLabels: string[];
+  steps: string[];
+  step: number;
+  /** For the bar: how far in, and how long the whole wait is expected to be. */
+  elapsed: number;
+  duration: number;
+  note: string;
+};
+
+const money = (n: number) =>
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(
+    n
+  );
+
+/** Re-renders on an interval, for anything stepped by elapsed time. */
+const useNow = (ms = 500) => {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(tick);
+  }, [ms]);
+  return now;
+};
+
+const DocumentLoader = ({
+  source,
+  target,
+  heading,
+  stepLabels,
+  steps,
+  step,
+  elapsed,
+  duration,
+  note,
+}: LoaderProps) => (
+  <div
+    role="status"
+    aria-live="polite"
+    className={s.root}
+    style={
+      {
+        "--elapsed": `-${Math.max(0, elapsed)}ms`,
+        "--duration": `${duration}ms`,
+      } as React.CSSProperties
+    }
+  >
+    <div className={s.scene} aria-hidden>
+      <div className={s.orbit} />
+
+      <div className={cn(s.card, s.source)}>
+        <span className={s.cardLabel}>
+          <FileText size={12} /> {source.label}
+        </span>
+        <div className={s.party}>{source.title}</div>
+        {source.meta?.map((line) => (
+          <div key={line} className={s.meta}>
+            {line}
+          </div>
+        ))}
+        <i />
+        <i />
+        <i />
+        {source.total && <div className={s.total}>{source.total}</div>}
+        <span className={s.scan} />
+      </div>
+
+      <div className={s.flow}>
+        <span />
+        <span />
+        <span />
+      </div>
+      <div className={s.sparkle}>
+        <Sparkles size={20} strokeWidth={1.6} />
+      </div>
+
+      <div className={cn(s.card, s.target)}>
+        <span className={cn(s.cardLabel, s.targetLabel)}>
+          <FileText size={12} /> {target.label}
+        </span>
+        {target.rows.map((row) => (
+          <div key={row.label} className={s.row} data-filled={row.filled}>
+            <span className={s.rowLabel}>{row.label}</span>
+            <span className={s.rowValue}>{row.value}</span>
+            <span className={s.rowSkeleton} />
+          </div>
+        ))}
+        {target.total && (
+          <div className={s.targetTotal} data-filled={target.total.filled}>
+            <span>{target.total.text}</span>
+            <Check size={13} />
+          </div>
+        )}
+      </div>
+    </div>
+
+    <div className="space-y-1 text-center">
+      <h2 className="text-base font-semibold text-foreground">{heading}</h2>
+      <p className={T.value}>{steps[step]}…</p>
+    </div>
+
+    <ol className={s.stepper}>
+      {stepLabels.map((label, index) => (
+        <li
+          key={label}
+          data-state={index < step ? "done" : index === step ? "active" : "todo"}
+        >
+          <span className={s.marker}>
+            {index < step ? <Check size={11} /> : index + 1}
+          </span>
+          {label}
+        </li>
+      ))}
+    </ol>
+
+    <div className={s.bar}>
+      <span />
+    </div>
+
+    <p className={cn(T.sub, "max-w-sm text-center")}>{note}</p>
+  </div>
+);
+
+/* ------------------------------------------------------------ type switch */
+
+const SWITCH_STEPS: Record<Route, string[]> = {
   AP: [
     "Reading the document again",
     "Matching the vendor and expense ledgers",
@@ -41,20 +170,14 @@ const STEPS: Record<Route, string[]> = {
     "Checking the journal balances",
   ],
 };
-const STEP_LABELS = ["Re-read", "Map ledgers", "Check"];
 const SOURCE_LABEL: Record<Route, string> = {
   AP: "Purchase bill",
   AR: "Sales invoice",
   JV: "Journal",
 };
 
-const money = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(
-    n
-  );
-
 /** The new voucher's rows, from the form `setRoute` already built. */
-const targetRows = (item: Item, to: Route): [string, string][] => {
+const switchRows = (item: Item, to: Route): [string, string][] => {
   const f = item.form;
   const pending = "For your review";
   if (to === "JV") {
@@ -73,120 +196,102 @@ const targetRows = (item: Item, to: Route): [string, string][] => {
   ];
 };
 
-const RouteSwitchLoader = ({ item }: { item: Item }) => {
+export const RouteSwitchLoader = ({ item }: { item: Item }) => {
   const { from, to, startedAt, until } = item.routeSwitch!;
-  const [now, setNow] = useState(Date.now);
+  const now = useNow();
   useEffect(() => {
-    const tick = setInterval(() => setNow(Date.now()), 500);
-    // The store's own timer is lost on reload; this one finishes the switch
-    // for a page that came back mid-wait.
+    // Belt and braces beside the store's own timer.
     const done = setTimeout(
       () => finishRouteSwitch(item.id),
       Math.max(0, until - Date.now())
     );
-    return () => {
-      clearInterval(tick);
-      clearTimeout(done);
-    };
+    return () => clearTimeout(done);
   }, [item.id, until]);
 
   const elapsed = Math.max(0, now - startedAt);
   const progress = Math.min(1, elapsed / ROUTE_SWITCH_MS);
-  const steps = STEPS[to];
-  const step = Math.min(steps.length - 1, Math.floor(progress * steps.length));
-  const rows = targetRows(item, to);
-
+  const steps = SWITCH_STEPS[to];
+  const rows = switchRows(item, to);
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className={s.root}
-      style={
-        {
-          "--elapsed": `-${elapsed}ms`,
-          "--duration": `${ROUTE_SWITCH_MS}ms`,
-        } as React.CSSProperties
-      }
-    >
-      <div className={s.scene} aria-hidden>
-        <div className={s.orbit} />
-
-        <div className={cn(s.card, s.source)}>
-          <span className={s.cardLabel}>
-            <FileText size={12} /> {SOURCE_LABEL[from]}
-          </span>
-          <div className={s.party}>{item.form.party || item.file.name}</div>
-          <i />
-          <i />
-          <i />
-          <div className={s.total}>{money(item.amount)}</div>
-          <span className={s.scan} />
-        </div>
-
-        <div className={s.flow}>
-          <span />
-          <span />
-          <span />
-        </div>
-        <div className={s.sparkle}>
-          <Sparkles size={20} strokeWidth={1.6} />
-        </div>
-
-        <div className={cn(s.card, s.target)}>
-          <span className={cn(s.cardLabel, s.targetLabel)}>
-            <FileText size={12} /> {ROUTE_LABELS[to]}
-          </span>
-          {rows.map(([label, value], index) => (
-            <div
-              key={label}
-              className={s.row}
-              data-filled={progress >= (index + 1) / (rows.length + 1)}
-            >
-              <span className={s.rowLabel}>{label}</span>
-              <span className={s.rowValue}>{value}</span>
-              <span className={s.rowSkeleton} />
-            </div>
-          ))}
-          <div className={s.targetTotal} data-filled={progress >= 0.9}>
-            <span>{money(item.amount)}</span>
-            <Check size={13} />
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-1 text-center">
-        <h2 className="text-base font-semibold text-foreground">
-          Preparing this as a {ROUTE_LABELS[to]}
-        </h2>
-        <p className={T.value}>{steps[step]}…</p>
-      </div>
-
-      <ol className={s.stepper}>
-        {STEP_LABELS.map((label, index) => (
-          <li
-            key={label}
-            data-state={
-              index < step ? "done" : index === step ? "active" : "todo"
-            }
-          >
-            <span className={s.marker}>
-              {index < step ? <Check size={11} /> : index + 1}
-            </span>
-            {label}
-          </li>
-        ))}
-      </ol>
-
-      <div className={s.bar}>
-        <span />
-      </div>
-
-      <p className={cn(T.sub, "max-w-sm text-center")}>
-        This takes about 20 seconds. You can open other documents in the
-        meantime.
-      </p>
-    </div>
+    <DocumentLoader
+      source={{
+        label: SOURCE_LABEL[from],
+        title: item.form.party || item.file.name,
+        total: money(item.amount),
+      }}
+      target={{
+        label: ROUTE_LABELS[to],
+        rows: rows.map(([label, value], index) => ({
+          label,
+          value,
+          filled: progress >= (index + 1) / (rows.length + 1),
+        })),
+        total: { text: money(item.amount), filled: progress >= 0.9 },
+      }}
+      heading={`Preparing this as a ${ROUTE_LABELS[to]}`}
+      stepLabels={["Re-read", "Map ledgers", "Check"]}
+      steps={steps}
+      step={Math.min(steps.length - 1, Math.floor(progress * steps.length))}
+      elapsed={elapsed}
+      duration={ROUTE_SWITCH_MS}
+      note="This takes about 20 seconds. You can open other documents in the meantime."
+    />
   );
 };
 
-export default RouteSwitchLoader;
+/* ------------------------------------------------------------- extraction */
+
+const EXTRACT_STEPS = [
+  "Reading the document",
+  "Pulling out the party, dates and amounts",
+  "Suggesting the voucher type and ledgers",
+];
+const CHANNEL: Record<Item["source"], string> = {
+  email: "via Email",
+  whatsapp: "via WhatsApp",
+  upload: "Uploaded",
+};
+
+/**
+ * The first read of a document. Nothing is known about it yet, so the voucher
+ * on the right keeps its placeholders — filling them with guesses would claim
+ * a reading that hasn't happened.
+ */
+export const ExtractionLoader = ({ item }: { item: Item }) => {
+  const now = useNow();
+  const queued = item.status === "Received";
+  const timing = extractionTiming(item.id);
+  const elapsed = timing ? now - timing.startedAt : 0;
+  const duration = timing?.duration ?? 3000;
+  const progress = Math.min(1, elapsed / duration);
+  const step = queued
+    ? 0
+    : Math.min(EXTRACT_STEPS.length - 1, Math.floor(progress * EXTRACT_STEPS.length));
+  return (
+    <DocumentLoader
+      source={{
+        label: item.file.ext.toUpperCase() || "File",
+        title: item.file.name,
+        meta: [item.file.size, CHANNEL[item.source]].filter(Boolean) as string[],
+      }}
+      target={{
+        label: "Preparing voucher",
+        rows: ["Party", "Voucher type", "Amount"].map((label) => ({
+          label,
+          filled: false,
+        })),
+      }}
+      heading={`Reading ${item.file.name}`}
+      stepLabels={["Read", "Extract", "Suggest voucher"]}
+      steps={
+        queued
+          ? ["Queued, starting shortly", ...EXTRACT_STEPS.slice(1)]
+          : EXTRACT_STEPS
+      }
+      step={step}
+      elapsed={elapsed}
+      duration={duration}
+      note="The review form opens here as soon as it’s ready. You can open other documents in the meantime."
+    />
+  );
+};

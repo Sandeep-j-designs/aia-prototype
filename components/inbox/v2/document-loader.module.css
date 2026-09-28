@@ -1,7 +1,7 @@
 /*
-  Route-switch loader. Same palette and paper treatment as the welcome card's
-  scene (kickstart.module.css) so the two read as one illustration system.
-  Only transform and opacity animate.
+  Document loader — the type switch and first-time extraction. Same palette
+  and paper treatment as the welcome card's scene (kickstart.module.css) so
+  the two read as one illustration system. Only transform and opacity animate.
 */
 .root {
   display: flex;
@@ -86,6 +86,11 @@
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.meta {
+  margin-top: 2px;
+  color: color-mix(in srgb, var(--palette-blue-900) 55%, #fff);
+  font-size: 10px;
 }
 .source i {
   display: block;
