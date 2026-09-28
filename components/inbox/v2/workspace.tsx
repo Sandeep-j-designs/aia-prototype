@@ -127,6 +127,7 @@ import {
 import { ApprovedDetails, RecordBanner } from "./record-details";
 import Sheet from "./sheet";
 import InvoiceSheet from "./invoice-sheet";
+import RouteSwitchLoader from "./route-switch-loader";
 import {
   CountPill,
   DateField,
@@ -173,7 +174,7 @@ import {
   routeNames,
   routes,
   setPermissions,
-  setRoute,
+  switchRoute,
   update,
   updatePosted,
   useStore,
@@ -1790,10 +1791,19 @@ export default function Workspace() {
    * answers for them on the form, where the cell that fixes each one is, which
    * a tooltip on a button at the other end of the header cannot point at.
    */
+  /*
+    A Post as change re-reads the document on the backend, which takes 20s or
+    more. Until it lands the form isn't the new voucher yet, so nothing on it
+    can be approved.
+  */
+  const switching =
+    !!item?.routeSwitch && item.routeSwitch.until > Date.now();
   const blockReason =
     !item || !reviewable
       ? ""
-      : !state.permissions.includes(item.route)
+      : switching
+        ? `Still preparing this as a ${ROUTE_LABELS[item.route]}. Approve once it’s ready.`
+        : !state.permissions.includes(item.route)
         ? `Your role can’t post to ${routeNames[item.route]}. Change the route above, or ask an administrator for access.`
         : matched
           ? `Same invoice number as ${matched.form.voucherNo} for ${item.form.party}. Change the vendor or the invoice number to approve.`
@@ -2668,7 +2678,8 @@ export default function Workspace() {
                     </Label>
                     <Select
                       value={item.route}
-                      onValueChange={(v) => setRoute(item.id, v as Route)}
+                      disabled={switching}
+                      onValueChange={(v) => switchRoute(item.id, v as Route)}
                     >
                       <SelectTrigger
                         id="inbox-post-as"
@@ -2684,6 +2695,7 @@ export default function Workspace() {
                           "[&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0 [&>svg]:opacity-70"
                         )}
                       >
+                        {switching && <Spinner />}
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -2853,7 +2865,7 @@ export default function Workspace() {
                             still disables it is everything the form has no way
                             to say: no write access, and a hard-block duplicate.
                           */
-                          disabled={!canReview || !!matched}
+                          disabled={!canReview || switching || !!matched}
                           onClick={() => {
                             // Both embedded sheets defer to their own
                             // validation — pressing this presses their Create
@@ -3088,7 +3100,9 @@ export default function Workspace() {
                     already encodes as `isTwoPane`; that module drives
                     components/inbox/detail, which this workspace replaced.
                   */}
-                  {item.route === "JV" ? (
+                  {switching && item.routeSwitch ? (
+                    <RouteSwitchPanel item={item} />
+                  ) : item.route === "JV" ? (
                     <ResizablePanelGroup
                       direction="horizontal"
                       className="min-h-0 flex-1"
@@ -5939,6 +5953,19 @@ const BlockedReason = ({
   ) : (
     <>{children}</>
   );
+
+/** The switch's loading state beside the document it is re-reading. */
+const RouteSwitchPanel = ({ item }: { item: Item }) => (
+  <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
+    <ResizablePanel defaultSize={32} minSize={18} className="min-w-0">
+      <Preview item={item} />
+    </ResizablePanel>
+    <ResizableHandle withHandle />
+    <ResizablePanel defaultSize={68} minSize={40} className="min-w-0">
+      <RouteSwitchLoader item={item} />
+    </ResizablePanel>
+  </ResizablePanelGroup>
+);
 
 /**
  * The review page's Delete — a destructive ghost, the lowest-emphasis red.

@@ -128,6 +128,13 @@ export type Item = {
   routeDrafts?: Partial<
     Record<Route, { form: Form; sheet?: Record<string, unknown> }>
   >;
+  /**
+   * Set while a "Post as" change is being prepared. Re-extracting a document
+   * into another voucher type takes the backend 20 seconds or more, so the
+   * form stays behind a loading state until `until`. A timestamp rather than a
+   * flag, so a reload mid-switch still knows when it ends.
+   */
+  routeSwitch?: { from: Route; to: Route; startedAt: number; until: number };
   retries: number;
   error?: string;
   firstAttempt: boolean;
@@ -1109,6 +1116,39 @@ export function setRoute(id: string, route: Route) {
     ai_route_confidence: x.confidence,
   });
   persist();
+}
+/** How long a "Post as" change takes to prepare. The backend needs 20s+. */
+export const ROUTE_SWITCH_MS = 20000;
+/**
+ * The accountant's own route change, from the Post as selector. Same move as
+ * `setRoute`, plus the wait the backend imposes while it re-reads the
+ * document into the new voucher type. Permission redirects and group moves
+ * call `setRoute` directly and stay instant.
+ */
+export function switchRoute(id: string, route: Route) {
+  const from = state.items.find((x) => x.id === id)?.route;
+  setRoute(id, route);
+  if (!from || state.items.find((x) => x.id === id)?.route === from) return;
+  const startedAt = Date.now();
+  update(
+    id,
+    {
+      routeSwitch: {
+        from,
+        to: route,
+        startedAt,
+        until: startedAt + ROUTE_SWITCH_MS,
+      },
+    },
+    "Inbox Route Switch Started"
+  );
+  setTimeout(() => finishRouteSwitch(id), ROUTE_SWITCH_MS);
+}
+/** Clears a finished switch. Safe to call early or twice; it checks the time. */
+export function finishRouteSwitch(id: string) {
+  const x = state.items.find((x) => x.id === id);
+  if (!x?.routeSwitch || x.routeSwitch.until > Date.now()) return;
+  update(id, { routeSwitch: undefined }, "Inbox Route Switch Finished", true);
 }
 export function setPermissions(permissions: Route[]) {
   configure({ permissions });
