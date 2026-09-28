@@ -1,0 +1,141 @@
+/*
+  The AP sheet's document viewer (public/ap/sheet.css — .preview__body,
+  .preview__page, .inv) for the routes that don't embed that sheet. Values are
+  copied, not approximated, so the three routes show one viewer.
+*/
+
+/* The mat. The gutter is held open so Fit width doesn't overflow by the
+   width of a scrollbar it caused. */
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  background: var(--palette-blue-50);
+  padding: 20px;
+  text-align: center;
+}
+.body::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+.body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.body::-webkit-scrollbar-thumb {
+  background: var(--palette-blue-200);
+  border-radius: 99px;
+  border: 4px solid var(--palette-blue-50);
+}
+
+.page {
+  display: block;
+  width: 640px;
+  margin: 0 auto;
+  text-align: left;
+}
+
+/* A sheet of paper on the mat. */
+.paper {
+  display: block;
+  width: 100%;
+  max-width: none;
+  border: none;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow:
+    0 1px 2px rgba(30, 30, 30, 0.08),
+    0 6px 20px rgba(30, 30, 30, 0.08);
+}
+.pdf {
+  aspect-ratio: 1 / 1.414;
+  height: auto;
+}
+
+/* ------------------------------------------------------------ the invoice */
+.inv {
+  padding: 26px 28px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: #222;
+  height: max-content;
+}
+.inv h3 {
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+.head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 2px solid #222;
+  padding-bottom: 10px;
+}
+.title {
+  text-align: right;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #555;
+}
+.parties {
+  display: flex;
+  gap: 20px;
+  padding: 12px 0;
+  border-bottom: 1px solid #ddd;
+}
+.parties > div {
+  flex: 1;
+}
+.k {
+  color: #707070;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.inv table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 10.5px;
+}
+.inv th {
+  background: #f3f4f8;
+  text-align: left;
+  padding: 6px;
+  border: 1px solid #ddd;
+  font-size: 10px;
+  font-weight: 700;
+}
+.inv td {
+  padding: 6px;
+  border: 1px solid #e5e5e5;
+  vertical-align: top;
+}
+.inv .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.inv .totals {
+  margin-left: auto;
+  width: 62%;
+  margin-top: 10px;
+}
+.inv .totals td {
+  border: none;
+  padding: 3px 6px;
+}
+.inv .grand td {
+  border-top: 1.5px solid #222;
+  font-weight: 700;
+  font-size: 12px;
+  padding-top: 6px;
+}
+.foot {
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: 1px dashed #ccc;
+  color: #777;
+  font-size: 10px;
+}
