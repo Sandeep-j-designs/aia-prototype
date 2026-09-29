@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, FileText, Sparkles } from "lucide-react";
+import { Check, FileText, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   extractionTiming,
@@ -29,12 +29,8 @@ type LoaderProps = {
   source: { label: string; title: string; meta?: string[]; total?: string };
   target: { label: string; rows: Row[]; total?: { text: string; filled: boolean } };
   heading: string;
-  stepLabels: string[];
   steps: string[];
   step: number;
-  /** For the bar: how far in, and how long the whole wait is expected to be. */
-  elapsed: number;
-  duration: number;
   note: string;
 };
 
@@ -57,24 +53,11 @@ const DocumentLoader = ({
   source,
   target,
   heading,
-  stepLabels,
   steps,
   step,
-  elapsed,
-  duration,
   note,
 }: LoaderProps) => (
-  <div
-    role="status"
-    aria-live="polite"
-    className={s.root}
-    style={
-      {
-        "--elapsed": `-${Math.max(0, elapsed)}ms`,
-        "--duration": `${duration}ms`,
-      } as React.CSSProperties
-    }
-  >
+  <div role="status" aria-live="polite" className={s.root}>
     <div className={s.scene} aria-hidden>
       <div className={s.orbit} />
 
@@ -129,23 +112,7 @@ const DocumentLoader = ({
       <p className={T.value}>{steps[step]}…</p>
     </div>
 
-    <ol className={s.stepper}>
-      {stepLabels.map((label, index) => (
-        <li
-          key={label}
-          data-state={index < step ? "done" : index === step ? "active" : "todo"}
-        >
-          <span className={s.marker}>
-            {index < step ? <Check size={11} /> : index + 1}
-          </span>
-          {label}
-        </li>
-      ))}
-    </ol>
-
-    <div className={s.bar}>
-      <span />
-    </div>
+    <Loader2 className="h-5 w-5 animate-spin text-primary" aria-hidden />
 
     <p className={cn(T.sub, "max-w-sm text-center")}>{note}</p>
   </div>
@@ -229,11 +196,8 @@ export const RouteSwitchLoader = ({ item }: { item: Item }) => {
         total: { text: money(item.amount), filled: progress >= 0.9 },
       }}
       heading={`Preparing this as a ${ROUTE_LABELS[to]}`}
-      stepLabels={["Re-read", "Map ledgers", "Check"]}
       steps={steps}
       step={Math.min(steps.length - 1, Math.floor(progress * steps.length))}
-      elapsed={elapsed}
-      duration={ROUTE_SWITCH_MS}
       note="This takes about 20 seconds. You can open other documents in the meantime."
     />
   );
@@ -282,15 +246,12 @@ export const ExtractionLoader = ({ item }: { item: Item }) => {
         })),
       }}
       heading={`Reading ${item.file.name}`}
-      stepLabels={["Read", "Extract", "Suggest voucher"]}
       steps={
         queued
           ? ["Queued, starting shortly", ...EXTRACT_STEPS.slice(1)]
           : EXTRACT_STEPS
       }
       step={step}
-      elapsed={elapsed}
-      duration={duration}
       note="The review form opens here as soon as it’s ready. You can open other documents in the meantime."
     />
   );
