@@ -1,6 +1,10 @@
 import { useSyncExternalStore } from "react";
-import { MOCK_INBOX_ITEMS } from "@/config/pages/inbox/mock-inbox";
+import {
+  MOCK_INBOX_ITEMS,
+  SAHYADRI_FIRST_BILL,
+} from "@/config/pages/inbox/mock-inbox";
 import type { InboxItem } from "@/types/pages/inbox";
+import type { UserCompany } from "@/types/pages/organisation";
 import {
   AR_FIELD_DEFAULTS,
   type ArInvoiceState,
@@ -22,18 +26,58 @@ export const routeNames = {
   JV: "Journal",
   AR: "Accounts Receivable",
 };
-export const companies = [
+/**
+ * One organisation the user belongs to, as the prototype keeps it.
+ *
+ * `id` keys everything else — items, events and every module's mock store —
+ * so it never changes. Production's equivalent is `UserCompany`
+ * (types/pages/organisation.ts); the top bar is handed that shape.
+ */
+export type Company = {
+  id: string;
+  name: string;
+  /**
+   * The routing address's local part. Fixed at creation: renaming an
+   * organisation keeps it, so a forwarding rule set up against the old
+   * address keeps delivering.
+   */
+  slug: string;
+  branches: string[];
+  /** Primary GSTIN, "" when none is registered yet. */
+  gstin: string;
+  /** State of the primary registration, "" when unknown. */
+  state: string;
+  /** The accounting tool connected, or null for none. */
+  tool: "tally" | "zoho" | null;
+};
+
+/**
+ * The organisations the prototype opens with.
+ *
+ * DEV: GET /api/companies/user?userUuid=… returns these as UserCompany[]
+ * (useUserCompaniesStore.fetchCompanies). New ones are added by
+ * `createCompany`, so the live list is `state.companies`, not this.
+ */
+export const SEED_COMPANIES: Company[] = [
   {
     id: "shakun",
     name: "Shakunthalam Oil & Refineries",
     slug: "shakunthalam",
     branches: ["Karnataka HQ", "Maharashtra Branch"],
+    gstin: "29AAWCS8421F1ZR",
+    state: "Karnataka",
+    tool: "tally",
   },
   {
+    // A partnership firm machining engineering components in Chakan, Pune —
+    // smaller than Shakunthalam, one registration, its own books in every module.
     id: "acme",
-    name: "Acme Industries",
-    slug: "acme-industries",
-    branches: ["Karnataka HQ"],
+    name: "Sahyadri Precision Works",
+    slug: "sahyadri-precision",
+    branches: ["Pune HQ"],
+    gstin: "27AABFS5582A1ZC",
+    state: "Maharashtra",
+    tool: "tally",
   },
 ];
 export const actor = "Sandeep Balaji";
@@ -121,10 +165,16 @@ export type Item = {
    * A voucher that was already on the books before this Inbox existed.
    *
    * It is here so a hard duplicate has something concrete to match against and
-   * to open — "View PUR/25-26/041" is a real record, not a dead link. It is not
+   * to open — "View PUR/26-27/0312" is a real record, not a dead link. It is not
    * an inbox document, so it stays out of the queue, the tabs and the sync run.
    */
   priorVoucher?: boolean;
+  /**
+   * Raised by hand from a register's Create Bill / Create Invoice / New
+   * Journal Voucher, not read off a document. There is no file behind it, so
+   * it never joins the Inbox queue — it lives in its own register.
+   */
+  created?: boolean;
   routeDrafts?: Partial<
     Record<Route, { form: Form; sheet?: Record<string, unknown> }>
   >;
@@ -156,6 +206,8 @@ export type Event = {
 type State = {
   version: 2;
   company: string;
+  /** Every organisation the user can switch to. Grows with `createCompany`. */
+  companies: Company[];
   permissions: Route[];
   items: Item[];
   events: Event[];
@@ -266,9 +318,7 @@ export const blankArSheet = (): ArInvoiceState => ({
   fields: { ...AR_FIELD_DEFAULTS },
 });
 function seed(): State {
-  const items: Item[] = MOCK_INBOX_ITEMS.filter(
-    (x) => x.route !== "Banking" && !x.lineage
-  ).map((x, n) => {
+  const fromMock = (x: InboxItem, n: number): Item => {
     const route = (x.route || "AP") as Route;
     const b = x.bill;
     /*
@@ -436,7 +486,10 @@ function seed(): State {
       // No seeded document is Approved, so none arrives with an approval
       // snapshot or an approver on it — those are written by approving.
     };
-  });
+  };
+  const items: Item[] = MOCK_INBOX_ITEMS.filter(
+    (x) => x.route !== "Banking" && !x.lineage
+  ).map(fromMock);
   // A posted record gives the hard duplicate a concrete, same-company match.
   const hard = items.find((x) => x.hardRef);
   if (hard)
@@ -444,20 +497,28 @@ function seed(): State {
       ...structuredClone(hard),
       id: "POSTED-2041",
       status: "Approved",
+      // DEV: payment and attachments come with the bill from GET /bills.
+      original: {
+        ...structuredClone(hard.original),
+        paymentStatus: "paid",
+        attachmentCount: 3,
+      },
       priorVoucher: true,
       hardRef: undefined,
       snapshot: structuredClone(hard.form),
       doneAt: new Date().toISOString(),
       doneBy: actor,
     });
-  const acme = structuredClone(items[0]);
-  acme.id = "ACME-1001";
+  // Sahyadri's first document is its own supplier's bill, read the same way.
+  const acme = fromMock(SAHYADRI_FIRST_BILL, items.length);
   acme.company = "acme";
-  acme.routingAddress = "acme-industries@inbox.aiaccountant.app";
+  acme.routingAddress = "sahyadri-precision@inbox.aiaccountant.app";
+  acme.form = { ...acme.form, gst: "Pune HQ" };
   items.push(acme);
   return {
     version: 2,
     company: "shakun",
+    companies: structuredClone(SEED_COMPANIES),
     permissions: [...routes],
     items,
     events: [],
@@ -703,6 +764,73 @@ export function useStore() {
   );
 }
 export const getState = () => state;
+
+/**
+ * The top bar's view of an organisation — production's `UserCompany`, which
+ * GET /api/companies/user returns. The prototype has one user, so the
+ * membership ids are derived rather than stored.
+ */
+export const toUserCompany = (company: Company): UserCompany => ({
+  ucUuid: `uc-${company.id}`,
+  companyUuid: company.id,
+  companyName: company.name,
+  companyId: company.id,
+  organisationId: "org-aiaccountant",
+  isActive: true,
+  thirdPartyTool: company.tool ?? undefined,
+});
+
+/** The organisation with this id, from the live list. */
+export const companyOf = (id: string) =>
+  state.companies.find((company) => company.id === id);
+
+const slugify = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "organisation";
+
+/**
+ * A new organisation: no registration, no branches, no tool connected — every
+ * module opens on its empty state for it.
+ *
+ * DEV: POST /api/companies { companyName, userUuid, createdBy } →
+ * { companyUuid, ucUuid }. Production then refetches the company list.
+ */
+export function createCompany(name: string): Company {
+  const base = slugify(name);
+  const taken = new Set(state.companies.map((c) => c.slug));
+  let slug = base;
+  for (let n = 2; taken.has(slug); n++) slug = `${base}-${n}`;
+  const company: Company = {
+    id: `org-${crypto.randomUUID().slice(0, 8)}`,
+    name,
+    slug,
+    branches: [],
+    gstin: "",
+    state: "",
+    tool: null,
+  };
+  state = { ...state, companies: [...state.companies, company] };
+  persist();
+  return company;
+}
+
+/**
+ * Rename an organisation. Only the name moves: the id keys its data and the
+ * slug its routing address, and neither should change under the user.
+ *
+ * DEV: PUT /api/companies { companyUuid, companyName, userUuid, updatedBy }.
+ */
+export function renameCompany(id: string, name: string) {
+  state = {
+    ...state,
+    companies: state.companies.map((c) => (c.id === id ? { ...c, name } : c)),
+  };
+  persist();
+}
 export function event(
   name: string,
   item?: Item,
@@ -1092,7 +1220,7 @@ export function setRoute(id: string, route: Route) {
     form.lines = form.lines.map((l) => ({ ...l, ledger: "" }));
     /*
       The voucher number goes with them, for the same reason. It belongs to a
-      series — PUR/25-26/041 is a purchase number — and carrying it onto a sales
+      series — PUR/26-27/0312 is a purchase number — and carrying it onto a sales
       voucher numbers the invoice out of a book it was never in. Blanking a
       required field is the visible version of that problem; leaving it filled
       with the wrong series is the invisible one.
@@ -1204,7 +1332,10 @@ const timers = new Set<string>();
  * for the loader's progress. Kept beside the timers rather than on the item:
  * it is the timers' own schedule, and it resets with them on load.
  */
-const extractionTimes = new Map<string, { startedAt: number; duration: number }>();
+const extractionTimes = new Map<
+  string,
+  { startedAt: number; duration: number }
+>();
 export const extractionTiming = (id: string) => extractionTimes.get(id);
 export function scheduleExtraction(id: string) {
   if (timers.has(id)) return;
@@ -1388,6 +1519,7 @@ export async function ingest(
       : state.permissions[0] || "AP";
     const form = {
       ...blankForm(),
+      gst: companyOf(company)?.branches[0] ?? "",
       voucherNo: `${route}-${Date.now().toString().slice(-7)}`,
       voucherType:
         route === "JV" ? "Journal" : route === "AR" ? "Sales" : "Purchase",
@@ -1407,7 +1539,7 @@ export async function ingest(
       source,
       sender,
       subject: source === "email" ? "Forwarded invoice" : "",
-      routingAddress: `${companies.find((c) => c.id === company)?.slug}@inbox.aiaccountant.app`,
+      routingAddress: `${companyOf(company)?.slug}@inbox.aiaccountant.app`,
       file: {
         name: file.name,
         size: `${Math.ceil(file.size / 1024)} KB`,
@@ -1571,6 +1703,146 @@ export function beginUploadedExtraction(
 }
 
 /**
+ * Bill Splitter's Create N bills: each confirmed bill enters as its own
+ * upload and runs the ordinary extraction into Needs Review. Nothing is
+ * approved — the PRD is explicit that the splitter never skips review.
+ *
+ * The extracted values come from a purchase template, as the demo upload's
+ * do, with the vendor and invoice number read off the bill's own pages laid
+ * over them where detection found them.
+ *
+ * DEV: POST /bill-splits/:id/bills returns the created documents.
+ */
+export function createSplitBills(
+  company: string,
+  bills: { fileName: string; vendor?: string; invoiceNo?: string }[]
+) {
+  const templates = seed().items.filter(
+    (item) =>
+      item.company === company &&
+      item.route === "AP" &&
+      seedable(item) &&
+      !item.priorVoucher &&
+      // A clean bill: each split bill should land in Needs Review on its own
+      // merits, not arrive pre-flagged as a duplicate or a failure.
+      ["Received", "Extracting", "Needs Review"].includes(item.status) &&
+      !item.hardRef &&
+      !item.softRef &&
+      !item.error
+  );
+  if (!templates.length) return [];
+  const created = bills.map((bill, index): Item => {
+    const template = structuredClone(templates[index % templates.length]);
+    return {
+      ...template,
+      id: `SPLIT-BILL-${crypto.randomUUID()}`,
+      status: "Needs Review",
+      source: "upload",
+      sender: actor,
+      route: "AP",
+      aiRoute: "AP",
+      topChoice: "AP",
+      file: { ...template.file, name: bill.fileName, ext: "pdf" },
+      form: {
+        ...template.form,
+        party: bill.vendor || template.form.party,
+        invoiceNo: bill.invoiceNo || template.form.invoiceNo,
+      },
+    };
+  });
+  beginUploadedExtraction(company, created, []);
+  return created;
+}
+
+/**
+ * A blank voucher for one register, raised by hand rather than read off a
+ * document — the same Purchase, Sales or Journal form the Inbox opens, empty.
+ *
+ * It borrows a seeded item of the route for the scaffolding the forms read
+ * (`original` and friends) and blanks everything the accountant fills in.
+ */
+export function createBlank(route: Route) {
+  const company = state.company;
+  const template = seed().items.find(
+    (item) => item.route === route && seedable(item) && !item.priorVoucher
+  );
+  if (!template) return;
+  const now = new Date().toISOString();
+  const voucherType =
+    route === "JV" ? "Journal" : route === "AR" ? "Sales" : "Purchase";
+  const item: Item = {
+    ...structuredClone(template),
+    id: `NEW-${route}-${crypto.randomUUID()}`,
+    company,
+    status: "Needs Review",
+    route,
+    aiRoute: route,
+    topChoice: route,
+    confidence: 1,
+    reason: "",
+    source: "upload",
+    sender: actor,
+    subject: "",
+    file: { name: "", size: "", ext: "" },
+    received: now,
+    form: { ...blankForm(), gst: "", voucherType },
+    amount: 0,
+    manual: true,
+    created: true,
+    edited: [],
+    hardRef: undefined,
+    softRef: undefined,
+    deletedFrom: undefined,
+    doneAt: undefined,
+    doneBy: undefined,
+    snapshot: undefined,
+    sheet: undefined,
+    arSheet: route === "AR" ? blankArSheet() : undefined,
+    arSnapshot: undefined,
+    resyncNeeded: undefined,
+    routeDrafts: undefined,
+    routeSwitch: undefined,
+    retries: 0,
+    error: undefined,
+    firstAttempt: true,
+    extractionResult: undefined,
+    extractionDelay: undefined,
+  };
+  state = { ...state, items: [...state.items, item] };
+  event(
+    route === "AP"
+      ? "AP Bill Started"
+      : route === "JV"
+        ? "Journal Voucher Started"
+        : "AR Invoice Started",
+    item,
+    { item_id: item.id, entry: "manual" }
+  );
+  persist();
+  return item;
+}
+
+/**
+ * Drop a hand-raised voucher that was left without anything entered. Opening
+ * Create Bill and backing out should not leave an empty draft in the register.
+ */
+export function discardIfBlank(id: string) {
+  const x = state.items.find((x) => x.id === id);
+  if (!x?.created || x.status === "Approved" || x.edited.length) return;
+  const f = x.form;
+  const touched =
+    f.party ||
+    f.invoiceNo ||
+    f.voucherNo ||
+    f.date ||
+    f.narration ||
+    f.lines.some((l) => l.ledger || l.description || l.amount || l.dr || l.cr);
+  if (touched) return;
+  state = { ...state, items: state.items.filter((y) => y.id !== id) };
+  persist();
+}
+
+/**
  * Put one company back to the state a fresh page load would give it.
  *
  * The guided walkthrough uploads, extracts and opens a document, and what it
@@ -1602,6 +1874,127 @@ export function resetCompany(company: string) {
   persist();
 }
 
+/** One sales invoice created from an uploaded spreadsheet's preview rows. */
+export type ImportedInvoice = {
+  referenceNumber: string;
+  /** Blank when the sheet had none; the register numbers it. */
+  voucherNumber: string;
+  invoiceDate: string;
+  customerName: string;
+  gstin: string;
+  salesLedger: string;
+  costCentre: string;
+  totalAmount: number;
+  lines: {
+    itemName: string;
+    description: string;
+    quantity: number;
+    unitRate: number;
+    amount: number;
+  }[];
+  taxes: { ledger: string; amount: number }[];
+  /** The upload it came from, for the record's subject line. */
+  fileName: string;
+};
+
+/**
+ * Sales upload's Create Invoices: each invoice lands in the Sales register's
+ * All Invoices as a posted voucher. Created, not read off a document, so
+ * like a hand-raised voucher it never joins the Inbox queue.
+ *
+ * DEV: POST /api/accounts-receivable/v2/import-batches/:id/save creates the
+ * vouchers server-side; the register then lists them from its own endpoint.
+ */
+export function createImportedInvoices(
+  company: string,
+  invoices: ImportedInvoice[]
+) {
+  const template = seed().items.find(
+    (item) => item.route === "AR" && seedable(item) && !item.priorVoucher
+  );
+  if (!template || !invoices.length) return [];
+  const now = new Date().toISOString();
+  let seq = state.items.filter(
+    (x) => x.company === company && x.route === "AR"
+  ).length;
+  const created = invoices.map((invoice): Item => {
+    const arSheet: ArInvoiceState = {
+      ...blankArSheet(),
+      salesLedger: invoice.salesLedger,
+      items: invoice.lines.map((l) => ({
+        ...blankArItem(),
+        description: l.description,
+        item: l.itemName,
+        costCentre: invoice.costCentre,
+        quantity: l.quantity,
+        unitRate: l.unitRate,
+        amount: l.amount,
+      })),
+      taxes: invoice.taxes
+        .filter((t) => t.amount)
+        .map((t) => ({
+          id: arRowId(),
+          ledger: t.ledger,
+          costCentre: "",
+          amount: t.amount,
+        })),
+    };
+    const form: Form = {
+      ...blankForm(),
+      gst: invoice.gstin,
+      voucherType: "Sales",
+      voucherNo:
+        invoice.voucherNumber || `SAL/26-27/${String(++seq).padStart(4, "0")}`,
+      invoiceNo: invoice.referenceNumber,
+      date: invoice.invoiceDate,
+      party: invoice.customerName,
+      costCentre: invoice.costCentre,
+      lines: deriveLines(arSheet),
+    };
+    return {
+      ...structuredClone(template),
+      id: `IMPORT-AR-${crypto.randomUUID()}`,
+      company,
+      status: "Approved",
+      route: "AR",
+      aiRoute: "AR",
+      topChoice: "AR",
+      confidence: 1,
+      reason: "",
+      source: "upload",
+      sender: actor,
+      subject: invoice.fileName,
+      file: { name: "", size: "", ext: "" },
+      received: now,
+      form,
+      amount: invoice.totalAmount,
+      manual: true,
+      created: true,
+      edited: [],
+      hardRef: undefined,
+      softRef: undefined,
+      deletedFrom: undefined,
+      doneAt: now,
+      doneBy: actor,
+      snapshot: structuredClone(form),
+      sheet: undefined,
+      arSheet,
+      arSnapshot: structuredClone(arSheet),
+      resyncNeeded: undefined,
+      routeDrafts: undefined,
+      routeSwitch: undefined,
+      retries: 0,
+      error: undefined,
+      firstAttempt: true,
+      extractionResult: undefined,
+      extractionDelay: undefined,
+    };
+  });
+  state = { ...state, items: [...state.items, ...created] };
+  persist();
+  return created;
+}
+
 /**
  * Start the prototype over as the other first-visit story, without a reload.
  *
@@ -1613,7 +2006,13 @@ export function applyScenario(scenario: Scenario) {
   try {
     sessionStorage.setItem(SCENARIO_KEY, scenario);
   } catch {}
-  state = { ...seedFor(scenario), company: state.company };
+  // The organisations are who the user is, not the story being told: ones
+  // created in this run stay, and so does the one being looked at.
+  state = {
+    ...seedFor(scenario),
+    company: state.company,
+    companies: state.companies,
+  };
   persist();
   state.items
     .filter((x) => ["Received", "Extracting"].includes(x.status))
@@ -1752,9 +2151,7 @@ export function applyBulkAction(
       }
       if (
         action === "GST Registration" &&
-        !companies
-          .find((c) => c.id === state.company)
-          ?.branches.includes(nextValue)
+        !companyOf(state.company)?.branches.includes(nextValue)
       ) {
         skip("Invalid GST registration");
         continue;

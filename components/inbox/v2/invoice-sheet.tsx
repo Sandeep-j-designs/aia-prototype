@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import ArSheet from "@/components/inbox/v2/ar-sheet";
 import { arDocumentFor } from "@/config/pages/inbox/ar-invoice";
-import { Item, Form, companies, getState, update, updatePosted } from "./store";
+import { Item, Form, companyOf, getState, update, updatePosted } from "./store";
 
 /**
  * The inbox's half of the AR protocol — the mirror of ./sheet.tsx, which does
@@ -61,7 +61,7 @@ export default function InvoiceSheet({
         send(
           "context",
           {
-            company: companies.find((c) => c.id === i.company)?.name,
+            company: companyOf(i.company)?.name,
             form: i.form,
             sheet: i.sheet,
             manual: i.manual || !!i.file.blobId,
@@ -77,7 +77,12 @@ export default function InvoiceSheet({
           raised rather than read — so the inbox keeps drawing the source
           document itself, beside the sheet, in components/inbox/v2/preview.
         */
-        send("seed", arDocumentFor(i));
+        // A hand-raised invoice has nothing read off a document to seed it
+        // with, so the sheet is told to start blank instead.
+        send(
+          i.created ? "blank" : "seed",
+          i.created ? undefined : arDocumentFor(i)
+        );
       }
 
       if (m?.source === "aia-ar-v2" && m.type === "edited") {

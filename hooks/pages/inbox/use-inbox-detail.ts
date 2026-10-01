@@ -155,10 +155,10 @@ export const useInboxDetail = (itemId: string | undefined) => {
       //      → { voucherId }. Invalidate the inbox list on success.
       const destination =
         conversion.target === "JV"
-          ? "JV/25-26/088"
+          ? "JV/26-27/0088"
           : conversion.target === "Invoice"
-            ? "INV-S/25-26/112"
-            : "PUR/25-26/063";
+            ? "SOR/26-27/0447"
+            : "PUR/26-27/0321";
 
       setApprovedAs({
         convertedToJv: conversion.target === "JV",
@@ -218,8 +218,8 @@ export const useInboxDetail = (itemId: string | undefined) => {
         : item.route === "Banking"
           ? "Sent to reconciliation"
           : item.route === "JV"
-            ? "JV/25-26/019"
-            : (item.bill?.voucherNo ?? "PUR/25-26/064");
+            ? "JV/26-27/0019"
+            : (item.bill?.voucherNo ?? "PUR/26-27/0322");
 
     setApprovedAs({ convertedToJv: false, destination });
 

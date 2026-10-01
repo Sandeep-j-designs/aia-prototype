@@ -25,9 +25,9 @@ export const EXPENSE_LEDGERS = [
 ];
 
 export const EXISTING_PARTIES = [
-  "Alpha Customers Pvt Ltd",
-  "Beta Retail Co",
-  "Gamma Trading LLP",
+  "Annapoorna Wholesale",
+  "Hotel Mayura Group",
+  "Sri Lakshmi Traders",
 ];
 
 /**

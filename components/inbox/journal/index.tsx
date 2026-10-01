@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { EditedMark } from "@/components/inbox/v2/ui";
 import {
-  companies,
+  companyOf,
   journalLineErrors,
   journalTotals,
   type Form,
@@ -84,7 +84,7 @@ const JournalVoucher = ({
       };
   const totals = journalTotals(form);
   const errors = attempted && !readOnly ? journalLineErrors(form) : [];
-  const branches = companies.find((c) => c.id === item.company)?.branches ?? [];
+  const branches = companyOf(item.company)?.branches ?? [];
 
   /*
     The banner is a voucher-level error, and it only appears once an approval

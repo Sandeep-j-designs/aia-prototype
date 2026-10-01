@@ -4,7 +4,7 @@ import { apDocumentFor } from "@/config/pages/inbox/ap-document";
 import {
   Item,
   Form,
-  companies,
+  companyOf,
   fileUrl,
   getState,
   update,
@@ -50,7 +50,7 @@ export default function Sheet({
         send(
           "context",
           {
-            company: companies.find((c) => c.id === i.company)?.name,
+            company: companyOf(i.company)?.name,
             form: i.form,
             sheet: i.sheet,
             // No externalPreview. It used to be sent unconditionally, and the
@@ -80,14 +80,18 @@ export default function Sheet({
               ledger: l.ledger,
               amount: l.amount,
             })),
-            taxes: i.original.bill?.taxes || {},
+            // A hand-raised bill borrows a seeded item's scaffolding, not its
+            // tax lines.
+            taxes: i.created ? {} : i.original.bill?.taxes || {},
             subTotal: i.form.lines.reduce((s, l) => s + l.amount, 0),
             grandTotal: i.amount,
           },
           vendor: i.form.party,
         };
-        const doc = apDocumentFor(original);
-        send("seed", doc);
+        // A hand-raised bill has nothing read off a document: without a seed
+        // the sheet stays the blank form it is standalone, and raises no
+        // "Bill data extracted" toast.
+        if (!i.created) send("seed", apDocumentFor(original));
         /*
           Real uploaded bytes, as their own message rather than a field on
           `context`. Resolving the blob URL is async and `seed` has to follow
@@ -134,6 +138,7 @@ export default function Sheet({
       // engine — it boots against the DOM and holds the bill in closure state.
       key={`${item.company}-${item.id}-${item.route}`}
       itemId={`${item.company}-${item.id}-${item.route}`}
+      noDocument={item.created}
     />
   );
 }

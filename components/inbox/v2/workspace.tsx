@@ -105,7 +105,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { ColumnFilter, FilterPanel } from "./filter-panel";
+import { ColumnFilter, FilterPanel, QuickFilter } from "./filter-panel";
 import { format, parseISO } from "date-fns";
 import FilterChip from "@/components/common/filter-chip";
 import DateFilter from "@/components/common/date-filter";
@@ -126,15 +126,22 @@ import {
 } from "./table-sizing";
 import { ApprovedDetails, RecordBanner } from "./record-details";
 import Sheet from "./sheet";
+import Banking, { type BankingView } from "./banking";
+import ChartOfAccounts, { type CoaView } from "./chart-of-accounts";
+import Inventory, { type InventoryView } from "./inventory";
+import GstReconciliation, { type GstTab, type GstView } from "./gst";
+import SalesUpload, { type SalesUploadStep } from "./sales-upload";
 import InvoiceSheet from "./invoice-sheet";
 import { ExtractionLoader, RouteSwitchLoader } from "./document-loader";
 import {
+  AmountText,
   CountPill,
   DateField,
   EditedMark,
   Field,
   FieldCard,
   Notice,
+  PageButton,
   PageDialog,
   Pill,
   Req,
@@ -153,8 +160,13 @@ import {
   type BulkField,
   type BulkResult,
   approve,
-  companies,
+  companyOf,
   configure,
+  createCompany,
+  renameCompany,
+  toUserCompany,
+  createBlank,
+  discardIfBlank,
   event,
   Form,
   getState,
@@ -192,6 +204,7 @@ import { RunRowList } from "./progress-run";
 import UploadAnimation from "./upload-animation";
 import uploadStyles from "./upload-dialog.module.css";
 import Register, { type RegisterSyncState } from "./register";
+import BillRegister from "./bill-register";
 import SyncResultModal from "./sync/sync-result-modal";
 import SyncCloud from "./sync/sync-cloud";
 import SyncChromeButton from "./sync/sync-chrome-button";
@@ -205,16 +218,6 @@ const money = (n: number) =>
     n
   );
 /** "24 Sep 2026, 2:33 am" — the Bloocks date, with the time it arrived. */
-/** The Bloocks AmountCell's figure: rupees in en-IN groups, paise small and muted. */
-const AmountText = ({ value }: { value: number }) => {
-  const [rupees, paise] = Math.abs(value).toFixed(2).split(".");
-  return (
-    <>
-      {value < 0 && "−"}₹{new Intl.NumberFormat("en-IN").format(Number(rupees))}
-      <span className="text-caption-1 text-secondary-foreground">.{paise}</span>
-    </>
-  );
-};
 const stamp = (s: string) => format(new Date(s), "d MMM yyyy, h:mm aaa");
 /**
  * The upload cap, named rather than inlined: the modal states it, the list
@@ -395,8 +398,7 @@ const defaultColumns = (companyId: string) =>
   columns.filter(
     (c) =>
       c !== "GST Registration" ||
-      (companies.find((company) => company.id === companyId)?.branches.length ||
-        0) > 1
+      (companyOf(companyId)?.branches.length || 0) > 1
   );
 const RESIZABLE = new Set(columns);
 /**
@@ -627,6 +629,19 @@ const TABLE_ENTER_MS = 420;
 const detailHref = (id: string, extra?: string) =>
   `/inbox?id=${encodeURIComponent(id)}${extra ? `&${extra}` : ""}`;
 
+/** The registers by name, for a hand-raised voucher's way back. */
+const moduleNames: Record<Route, string> = {
+  AP: "Purchases",
+  AR: "Sales",
+  JV: "Journal Vouchers",
+};
+/** What a hand-raised voucher is called while it is being filled in. */
+const newVoucherTitle: Record<Route, string> = {
+  AP: "New Purchase Voucher",
+  AR: "New Sales Voucher",
+  JV: "New Journal Voucher",
+};
+
 /** AP's --gutter, applied to every full-width band on the screen. */
 /** 24px — the page gutter every band lines up on (Figma 24200:218735). */
 const gutter = "px-6";
@@ -646,52 +661,6 @@ const REQUIRED_FIELDS = new Set([
 ]);
 /** A horizontal band of controls. */
 const band = "flex flex-wrap items-center gap-2";
-/**
- * One column's filter, promoted onto the bar (Figma 716:15029).
- *
- * The trigger is a Bloocks FilterChip, the same as the Received date chip
- * beside it. The body is `ColumnFilter` — the same searchable multi-select the
- * column-header funnel opens — rather than a second list written to look like
- * it, so "Source" means one thing wherever it is answered.
- *
- * The chip says what is applied because it is the only place an applied quick
- * filter shows: a dropdown that silently filters the grid is worse than a wide
- * one.
- */
-const QuickFilter = ({
-  label,
-  options,
-  selected,
-  onChange,
-}: {
-  label: string;
-  options: FilterOption[];
-  selected: string[];
-  onChange: (next: string[]) => void;
-}) => (
-  <Popover>
-    <PopoverTrigger asChild>
-      {/* A Bloocks FilterChip: it names what is applied ("Source:
-          WhatsApp", or a count for several) and its × clears in place. */}
-      <FilterChip
-        label={label}
-        selectionType="multiple"
-        value={selected.map(
-          (value) => options.find((o) => o.value === value)?.label ?? value
-        )}
-        onClearButtonClick={() => onChange([])}
-      />
-    </PopoverTrigger>
-    <PopoverContent align="start" className="w-auto p-0">
-      <ColumnFilter
-        label={label}
-        options={options}
-        selected={selected}
-        onChange={onChange}
-      />
-    </PopoverContent>
-  </Popover>
-);
 /**
  * `issue()`'s validator labels, as sentences for the Approve tooltip.
  *
@@ -1338,14 +1307,112 @@ export default function Workspace() {
     SELECT_WIDTH +
     ACTIONS_WIDTH +
     shown.reduce((sum, c) => sum + colWidth(c), 0);
-  const company = companies.find((c) => c.id === state.company)!;
+  const company = companyOf(state.company)!;
   const id = typeof router.query.id === "string" ? router.query.id : "";
   const moduleRoute = routes.includes(router.query.module as Route)
     ? (router.query.module as Route)
     : undefined;
+  /*
+    Banking is a module but not a Route: its records are bank transactions,
+    not documents the Inbox routes, so it has its own screens under
+    ?module=BANK — the bank list, one account's transactions (&account=) and
+    Statement Logs (&logs=1).
+  */
+  const bankModule = router.query.module === "BANK";
+  /*
+    Masters, like Banking, are modules but not Routes: Chart of Accounts at
+    ?module=COA (&ledger=new|<id> for the ledger form) and Inventory at
+    ?module=INV (&item=new|<id> for the stock item form).
+  */
+  const coaModule = router.query.module === "COA";
+  const inventoryModule = router.query.module === "INV";
+  /** GST reconciliation at ?module=GST, its results tab in &tab=. */
+  const gstModule = router.query.module === "GST";
+  const gstView: GstView = {
+    tab: (["summary", "month", "vendor", "invoice"] as const).includes(
+      router.query.tab as GstTab
+    )
+      ? (router.query.tab as GstTab)
+      : undefined,
+  };
+  const goGst = (view: GstView) =>
+    void router.push(
+      view.tab && view.tab !== "summary"
+        ? `/inbox?module=GST&tab=${view.tab}`
+        : "/inbox?module=GST"
+    );
+  const coaView: CoaView = {
+    ledger:
+      typeof router.query.ledger === "string" ? router.query.ledger : undefined,
+  };
+  const inventoryView: InventoryView = {
+    item: typeof router.query.item === "string" ? router.query.item : undefined,
+  };
+  const goCoa = (view: CoaView) =>
+    void router.push(
+      view.ledger
+        ? `/inbox?module=COA&ledger=${encodeURIComponent(view.ledger)}`
+        : "/inbox?module=COA"
+    );
+  const goInventory = (view: InventoryView) =>
+    void router.push(
+      view.item
+        ? `/inbox?module=INV&item=${encodeURIComponent(view.item)}`
+        : "/inbox?module=INV"
+    );
+  const bankingView: BankingView = {
+    account:
+      typeof router.query.account === "string"
+        ? router.query.account
+        : undefined,
+    logs: router.query.logs === "1",
+  };
+  const goBanking = (view: BankingView) => {
+    const q = new URLSearchParams({ module: "BANK" });
+    if (view.account) q.set("account", view.account);
+    if (view.logs) q.set("logs", "1");
+    void router.push(`/inbox?${q.toString()}`);
+  };
+  /*
+    Sales upload is a flow inside the Sales module: ?module=AR&upload=new for
+    the upload page, then &upload=<batch>&step=mapping|preview.
+  */
+  const salesUploadBatch =
+    moduleRoute === "AR" && typeof router.query.upload === "string"
+      ? router.query.upload
+      : undefined;
+  const salesUploadStep: SalesUploadStep =
+    router.query.step === "mapping" || router.query.step === "preview"
+      ? router.query.step
+      : "upload";
+  const goSalesUpload = (step: SalesUploadStep, batchId?: string) =>
+    void router.push(
+      step === "upload"
+        ? "/inbox?module=AR&upload=new"
+        : `/inbox?module=AR&upload=${encodeURIComponent(batchId || "")}&step=${step}`
+    );
   const item = state.items.find(
     (x) => x.id === id && x.company === state.company
   );
+  /** Where leaving a record goes: its register if it was raised there. */
+  const exitHref = item?.created ? `/inbox?module=${item.route}` : "/inbox";
+  /*
+    A voucher raised by hand and left without anything entered goes when you
+    leave it, so backing out of Create Bill does not leave an empty draft.
+  */
+  const openId = useRef("");
+  useEffect(() => {
+    const left = openId.current;
+    openId.current = id;
+    if (left && left !== id) discardIfBlank(left);
+  }, [id]);
+  /** Create Bill / Create Invoice / New Journal Voucher: open a blank form. */
+  const createVoucher = (route: Route) => {
+    const created = createBlank(route);
+    if (!created) return;
+    configure({ queue: [created.id] });
+    void router.push(detailHref(created.id));
+  };
   // Attempting to approve one voucher says nothing about the next, and
   // Approve & Next walks straight into it — so the marks come off at the door.
   useEffect(() => setAttempted(false), [id, item?.route]);
@@ -1381,44 +1448,47 @@ export default function Workspace() {
   // A company nothing has been sent to yet shows an empty queue. The seeded
   // documents behind it are the demo batch the first upload brings in, not
   // arrivals — see `upload`.
-  const all = kickstartPreview
+  //
+  // A voucher raised by hand from a register (`created`) has no document, so
+  // it is on the company's books but never in the Inbox queue.
+  const books = kickstartPreview
     ? []
     : state.items.filter((x) => x.company === state.company && !x.priorVoucher);
+  const all = moduleRoute ? books : books.filter((x) => !x.created);
   /*
-    The welcome dialog: once per company, on its first visit to the Inbox.
+    The welcome dialog: opened only from "How Inbox works" in the page's
+    overflow menu. It no longer opens by itself on a company's first visit.
 
-    It opens over the queue whatever is in it — an empty Inbox, or one that
-    WhatsApp has been filling since before launch — and what it says adapts to
-    which (see `arrivals`). Not over a register or a document: those are
-    reached from the Inbox, and a first visit that lands on one directly is
-    welcomed when it comes back to the queue.
+    What it says adapts to what is in the queue (see `arrivals`).
   */
-  const welcomed = !!state.welcomed?.includes(state.company);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
-  useEffect(() => {
-    if (ready && !welcomed && !moduleRoute && !id) setWelcomeOpen(true);
-  }, [ready, welcomed, moduleRoute, id, state.company]);
   /*
     Documents still being read arrive as a toast, not a banner over the queue:
     it says so once when a batch lands and then gets out of the way, like every
-    other notice here. It fires when the count goes up (a new upload, or
-    opening the queue with some already in progress), not as it counts down,
-    because each document turning up in the table says the rest.
+    other notice here. It fires when the count goes up after the page has
+    loaded (a new upload), not as it counts down, because each document
+    turning up in the table says the rest. Opening the queue with some already
+    in progress shows no toast.
 
     Never under the welcome: that dialog already reports the batch. While it is
-    open, or about to open, the toast waits; when it closes it fires only if
-    documents are still being read, and not at all once they are all ready.
+    open the toast waits; when it closes it fires only if documents are still
+    being read, and not at all once they are all ready.
   */
   const preparing = all.filter((x) =>
     ["Received", "Extracting"].includes(x.status)
   ).length;
-  const welcomePending = welcomeOpen || (!welcomed && !moduleRoute && !id);
+  const welcomePending = welcomeOpen;
   const preparingBefore = useRef(0);
+  const preparingPrimed = useRef(false);
   const welcomeWasPending = useRef(false);
   useEffect(() => {
     const welcomeClosed = welcomeWasPending.current && !welcomePending;
     welcomeWasPending.current = welcomePending;
+    if (!ready) return;
+    const primed = preparingPrimed.current;
+    preparingPrimed.current = true;
     if (
+      primed &&
       !moduleRoute &&
       !welcomePending &&
       preparing > 0 &&
@@ -1435,7 +1505,7 @@ export default function Workspace() {
         }
       );
     preparingBefore.current = preparing;
-  }, [preparing, moduleRoute, welcomePending]);
+  }, [ready, preparing, moduleRoute, welcomePending]);
   const closeWelcome = () => {
     setWelcomeOpen(false);
     const seen = getState().welcomed || [];
@@ -1464,7 +1534,7 @@ export default function Workspace() {
    * posted vouchers — that view is the Figma's "Accounts Payable - All Bills"
    * screen, and its Current Module is not a guess.
    */
-  const sync = useTallySync({ items: all, route: moduleRoute ?? null });
+  const sync = useTallySync({ items: books, route: moduleRoute ?? null });
   const searchInput = useRef<HTMLInputElement | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const filtered = useMemo(
@@ -1680,7 +1750,7 @@ export default function Workspace() {
             ? ["Needs Review", "Duplicate"].includes(x.status)
             : !["Deleted", "Failed"].includes(x.status))
       );
-    void router.push(next ? detailHref(next.id) : "/inbox");
+    void router.push(next ? detailHref(next.id) : exitHref);
   };
   const approveItem = () => {
     if (!item) return;
@@ -1796,18 +1866,17 @@ export default function Workspace() {
     more. Until it lands the form isn't the new voucher yet, so nothing on it
     can be approved.
   */
-  const switching =
-    !!item?.routeSwitch && item.routeSwitch.until > Date.now();
+  const switching = !!item?.routeSwitch && item.routeSwitch.until > Date.now();
   const blockReason =
     !item || !reviewable
       ? ""
       : switching
         ? `Still preparing this as a ${ROUTE_LABELS[item.route]}. Approve once it’s ready.`
         : !state.permissions.includes(item.route)
-        ? `Your role can’t post to ${routeNames[item.route]}. Change the route above, or ask an administrator for access.`
-        : matched
-          ? `Same invoice number as ${matched.form.voucherNo} for ${item.form.party}. Change the vendor or the invoice number to approve.`
-          : "";
+          ? `Your role can’t post to ${routeNames[item.route]}. Change the route above, or ask an administrator for access.`
+          : matched
+            ? `Same invoice number as ${matched.form.voucherNo} for ${item.form.party}. Change the vendor or the invoice number to approve.`
+            : "";
   const deleteItem = () =>
     item &&
     askDelete(`“${item.file.name}”`, () => {
@@ -1833,7 +1902,17 @@ export default function Workspace() {
     // as current is the child, not the parent.
     JV: "journal-vouchers",
   };
-  const navId = moduleRoute ? ROUTE_TO_NAV[moduleRoute] : "inbox";
+  const navId = gstModule
+    ? "gst"
+    : coaModule
+      ? "chart-of-accounts"
+      : inventoryModule
+        ? "inventory"
+        : bankModule
+          ? "banking"
+          : moduleRoute
+            ? ROUTE_TO_NAV[moduleRoute]
+            : "inbox";
   const selectNav = (navItemId: string) => {
     if (navItemId === "inbox") {
       setFilters(defaultFilters);
@@ -1844,6 +1923,22 @@ export default function Workspace() {
       setDialog("dashboard");
       return;
     }
+    if (navItemId === "gst") {
+      goGst({});
+      return;
+    }
+    if (navItemId === "chart-of-accounts") {
+      goCoa({});
+      return;
+    }
+    if (navItemId === "inventory") {
+      goInventory({});
+      return;
+    }
+    if (navItemId === "banking") {
+      goBanking({});
+      return;
+    }
     const route = NAV_TO_ROUTE[navItemId];
     if (route) {
       setFilters(defaultFilters);
@@ -1852,12 +1947,38 @@ export default function Workspace() {
     }
     notify("That screen is part of the app, but not this prototype.", "info");
   };
-  const changeCompany = (value: string) => {
+  /**
+   * Switch organisation and stay where you are.
+   *
+   * Production redirects to the post-login landing page after a switch
+   * (getPostLoginRedirectPath). The prototype keeps the module — and the GST
+   * results tab — because the point of switching here is to compare the same
+   * screen across books. Anything naming a record (a document, a bank
+   * account, a ledger, a stock item, an upload) belongs to the company being
+   * left, so those params go. Designer-approved deviation.
+   */
+  const changeCompany = (value: string, quiet = false) => {
+    if (value === state.company) return;
     configure({ company: value, queue: [] });
     setSelected([]);
     setFilters(defaultFilters);
     setTab("Need review");
-    void router.push("/inbox");
+    const keep = new URLSearchParams();
+    if (typeof router.query.module === "string")
+      keep.set("module", router.query.module);
+    if (typeof router.query.tab === "string") keep.set("tab", router.query.tab);
+    const query = keep.toString();
+    void router.push(query ? `/inbox?${query}` : "/inbox");
+    // DEV: POST /api/users/switch-company { companyUuid, userUuid, updatedBy }
+    // then session.update(...) and useUserCompaniesStore.selectCompany.
+    if (!quiet)
+      notify(`Switched to ${companyOf(value)?.name ?? "organisation"}`);
+  };
+  /** A new organisation becomes the active one, as production's create does. */
+  const createOrganisation = (name: string) => {
+    const created = createCompany(name);
+    changeCompany(created.id, true);
+    return created.id;
   };
   const downloadAudit = () => {
     const blob = new Blob(
@@ -2184,6 +2305,16 @@ export default function Workspace() {
    * DEV: prototype-only. Production uploads the files it is given.
    */
   const intakeMode = useRef<"bulk" | "single" | "auto">("auto");
+  /** Upload Documents above the Inbox table, and Upload Bills on Purchases. */
+  const openSingleUpload = () => {
+    intakeMode.current = "single";
+    setSource("upload");
+    setSender(actor);
+    setUploadErrors([]);
+    setFiles([]);
+    setUploadStatus([]);
+    setDialog("upload");
+  };
   const upload = async (
     selectedFiles: File[],
     intakeSource: Item["source"],
@@ -2669,13 +2800,27 @@ export default function Workspace() {
                 )}
               >
                 <PageButton
-                  label="Back to Inbox"
+                  label={
+                    item.created
+                      ? `Back to ${moduleNames[item.route]}`
+                      : "Back to Inbox"
+                  }
                   disabled={false}
-                  onClick={() => void router.push("/inbox")}
+                  onClick={() => void router.push(exitHref)}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </PageButton>
-                {reviewable && (
+                {/*
+                  A voucher raised by hand was never read off a document, so
+                  there is no AI pick to override and nothing to re-extract
+                  into another type: it is named, not switched.
+                */}
+                {reviewable && item.created && (
+                  <span className="text-sm font-semibold text-foreground">
+                    {newVoucherTitle[item.route]}
+                  </span>
+                )}
+                {reviewable && !item.created && (
                   <>
                     <Label
                       htmlFor="inbox-post-as"
@@ -2786,40 +2931,43 @@ export default function Workspace() {
                   the queue. Previous used to appear only past the first document,
                   which shifted Next sideways the moment you paged off it.
                 */}
-                <div className="flex items-center gap-1">
-                  <PageButton
-                    label="Previous document"
-                    disabled={state.queue.indexOf(item.id) <= 0}
-                    className="text-primary/40 hover:bg-accent hover:text-primary disabled:opacity-40"
-                    onClick={() =>
-                      void router.push(
-                        detailHref(
-                          state.queue[state.queue.indexOf(item.id) - 1]
+                {/* One voucher, raised by hand: nothing to page through. */}
+                {!item.created && (
+                  <div className="flex items-center gap-1">
+                    <PageButton
+                      label="Previous document"
+                      disabled={state.queue.indexOf(item.id) <= 0}
+                      className="text-primary/40 hover:bg-accent hover:text-primary disabled:opacity-40"
+                      onClick={() =>
+                        void router.push(
+                          detailHref(
+                            state.queue[state.queue.indexOf(item.id) - 1]
+                          )
                         )
-                      )
-                    }
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </PageButton>
-                  <span className="whitespace-nowrap text-sm font-semibold text-primary">
-                    {router.query.voucher ? "Voucher" : "Documents"}{" "}
-                    {Math.max(0, state.queue.indexOf(item.id)) + 1} of{" "}
-                    {state.queue.includes(item.id) ? state.queue.length : 1}
-                  </span>
-                  <PageButton
-                    label="Next document"
-                    // Wrapped, not passed: the click event is an argument, and
-                    // a truthy one would put the pager back on the review-only
-                    // walk this button is not doing.
-                    disabled={
-                      state.queue.indexOf(item.id) >= state.queue.length - 1
-                    }
-                    className="text-primary/40 hover:bg-accent hover:text-primary disabled:opacity-40"
-                    onClick={() => nextItem()}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </PageButton>
-                </div>
+                      }
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </PageButton>
+                    <span className="whitespace-nowrap text-sm font-semibold text-primary">
+                      {router.query.voucher ? "Voucher" : "Documents"}{" "}
+                      {Math.max(0, state.queue.indexOf(item.id)) + 1} of{" "}
+                      {state.queue.includes(item.id) ? state.queue.length : 1}
+                    </span>
+                    <PageButton
+                      label="Next document"
+                      // Wrapped, not passed: the click event is an argument, and
+                      // a truthy one would put the pager back on the review-only
+                      // walk this button is not doing.
+                      disabled={
+                        state.queue.indexOf(item.id) >= state.queue.length - 1
+                      }
+                      className="text-primary/40 hover:bg-accent hover:text-primary disabled:opacity-40"
+                      onClick={() => nextItem()}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </PageButton>
+                  </div>
+                )}
                 {/*
                   The actions, at the end of the row that already holds
                   everything else about this document. They had a docked bar of
@@ -2885,7 +3033,7 @@ export default function Workspace() {
                             else approveItem();
                           }}
                         >
-                          Approve &amp; Next
+                          {item.created ? "Approve" : <>Approve &amp; Next</>}
                         </Button>
                       </BlockedReason>
                     )}
@@ -2901,10 +3049,18 @@ export default function Workspace() {
                     Edit entry went with it, into the action group.
                   */}
                   <div className="min-h-0 flex-1 overflow-auto bg-accent/30">
-                    <div className="mx-auto grid max-w-[1600px] grid-cols-1 lg:grid-cols-[minmax(280px,35%)_1fr]">
-                      <div className="lg:sticky lg:top-0 lg:h-[calc(100vh-160px)]">
-                        <Preview item={item} />
-                      </div>
+                    <div
+                      className={cn(
+                        "mx-auto grid max-w-[1600px] grid-cols-1",
+                        !item.created && "lg:grid-cols-[minmax(280px,35%)_1fr]"
+                      )}
+                    >
+                      {/* A voucher raised by hand has no document to show. */}
+                      {!item.created && (
+                        <div className="lg:sticky lg:top-0 lg:h-[calc(100vh-160px)]">
+                          <Preview item={item} />
+                        </div>
+                      )}
                       <div className="min-w-0 p-5 lg:pl-1">
                         {item.route === "JV" ? (
                           <JournalVoucher
@@ -3101,6 +3257,50 @@ export default function Workspace() {
                   */}
                   {switching && item.routeSwitch ? (
                     <RouteSwitchPanel item={item} />
+                  ) : item.created && item.route === "JV" ? (
+                    /* Raised by hand: no document, so no preview beside it. */
+                    <div
+                      data-guide-id="inbox-fields"
+                      className="min-h-0 min-w-0 flex-1 overflow-auto"
+                    >
+                      <JournalVoucher
+                        key={`${item.id}-${item.route}`}
+                        item={item}
+                        attempted={attempted}
+                        readOnly={!canReview}
+                        onEdit={edit}
+                        createdLedgers={createdMasters.Ledger}
+                        onCreateLedger={(name, assign) =>
+                          setCreating({
+                            field: "Ledger",
+                            name,
+                            description:
+                              "It is added to your books and set on this line.",
+                            then: (created) => {
+                              assign(created);
+                              notify(
+                                `Ledger “${created}” created and set on the line.`
+                              );
+                            },
+                          })
+                        }
+                      />
+                    </div>
+                  ) : item.created && item.route === "AR" ? (
+                    <div
+                      data-guide-id="inbox-fields"
+                      className="flex min-h-0 min-w-0 flex-1 flex-col"
+                    >
+                      <InvoiceSheet
+                        key={`${item.id}-${item.route}`}
+                        item={item}
+                        allowEdits={approvedEditing}
+                        onApproved={approveItem}
+                        onReady={(send) => {
+                          sheetSend.current = send;
+                        }}
+                      />
+                    </div>
                   ) : item.route === "JV" ? (
                     <ResizablePanelGroup
                       direction="horizontal"
@@ -3198,74 +3398,215 @@ export default function Workspace() {
                 </>
               )}
             </>
-          ) : moduleRoute ? (
-            /*
-              Purchases, Sales and Journal Vouchers are registers of posted
-              records, not the document queue with a filter on it — see
-              ./register. The Inbox's table stays behind for the Inbox.
-            */
-            <Register
-              /*
-                Keyed by route: the three registers are the same element in the
-                tree, so without this the tab and page you left Purchases on
-                came with you to Sales — and "Needs Review" is not even one of
-                the tabs Sales has.
-              */
-              key={moduleRoute}
-              route={moduleRoute}
-              items={moduleItems}
-              syncState={registerSyncState}
-              selected={selected}
-              onSelectedChange={setSelected}
-              onOpen={(x) => {
-                configure({ queue: moduleItems.map((row) => row.id) });
-                void router.push(
-                  detailHref(
-                    x.id,
-                    x.status === "Approved" ? "voucher=1" : undefined
-                  )
-                );
-              }}
-              onDelete={(x) =>
-                askDelete(`“${x.form.voucherNo || x.file.name}”`, () => {
-                  remove(x.id);
-                  notify(`Deleted ${x.form.voucherNo || x.file.name}.`);
-                })
-              }
+          ) : gstModule ? (
+            <GstReconciliation
+              key={state.company}
+              view={gstView}
+              company={state.company}
+              companyName={company.name}
+              onNavigate={goGst}
+              notify={notify}
               onUnbuilt={(what) =>
                 notify(
                   `${what} is part of the app, but not this prototype.`,
                   "info"
                 )
               }
-              search={filters.search}
-              onSearchChange={(value) => setFilter("search", value)}
-              /*
+            />
+          ) : coaModule ? (
+            <ChartOfAccounts
+              key={`${state.company}-${coaView.ledger || "tree"}`}
+              view={coaView}
+              company={state.company}
+              onNavigate={goCoa}
+              notify={notify}
+              onUnbuilt={(what) =>
+                notify(
+                  `${what} is part of the app, but not this prototype.`,
+                  "info"
+                )
+              }
+            />
+          ) : inventoryModule ? (
+            <Inventory
+              key={`${state.company}-${inventoryView.item || "list"}`}
+              view={inventoryView}
+              company={state.company}
+              onNavigate={goInventory}
+              notify={notify}
+              onUnbuilt={(what) =>
+                notify(
+                  `${what} is part of the app, but not this prototype.`,
+                  "info"
+                )
+              }
+            />
+          ) : bankModule ? (
+            <Banking
+              key={state.company}
+              view={bankingView}
+              company={state.company}
+              onNavigate={goBanking}
+              notify={notify}
+              onUnbuilt={(what) =>
+                notify(
+                  `${what} is part of the app, but not this prototype.`,
+                  "info"
+                )
+              }
+            />
+          ) : salesUploadBatch ? (
+            <SalesUpload
+              key={`${state.company}-${salesUploadBatch}-${salesUploadStep}`}
+              step={salesUploadStep}
+              batchId={
+                salesUploadBatch === "new" ? undefined : salesUploadBatch
+              }
+              company={state.company}
+              onNavigate={goSalesUpload}
+              onExit={(tab) =>
+                void router.push(
+                  tab === "uploads"
+                    ? "/inbox?module=AR&tab=uploads"
+                    : "/inbox?module=AR"
+                )
+              }
+              notify={notify}
+            />
+          ) : moduleRoute ? (
+            /*
+              Purchases, Sales and Journal Vouchers are registers of posted
+              records, not the document queue with a filter on it — see
+              ./register. The Inbox's table stays behind for the Inbox.
+            */
+            moduleRoute === "AP" ? (
+              <BillRegister
+                key={state.company}
+                items={moduleItems}
+                selected={selected}
+                onSelectedChange={setSelected}
+                onOpen={(x) => {
+                  configure({ queue: moduleItems.map((row) => row.id) });
+                  void router.push(
+                    detailHref(
+                      x.id,
+                      x.status === "Approved" ? "voucher=1" : undefined
+                    )
+                  );
+                }}
+                onDelete={(x) =>
+                  askDelete(`“${x.form.voucherNo || x.file.name}”`, () => {
+                    remove(x.id);
+                    notify(`Deleted ${x.form.voucherNo || x.file.name}.`);
+                  })
+                }
+                onUnbuilt={(what) =>
+                  notify(
+                    `${what} is part of the app, but not this prototype.`,
+                    "info"
+                  )
+                }
+                onCreate={() => createVoucher(moduleRoute)}
+                search={filters.search}
+                onSearchChange={(value) => setFilter("search", value)}
+                filters={{
+                  party: registerParty,
+                  from: filters.from,
+                  to: filters.to,
+                  min: filters.min,
+                  max: filters.max,
+                }}
+                onFilterChange={(key, value) =>
+                  key === "party"
+                    ? setRegisterParty(value)
+                    : setFilter(key, value)
+                }
+                pageSize={pageSize}
+                onPageSizeChange={setPageSize}
+                pageSizes={PAGE_SIZES}
+                onResetFilters={() => {
+                  setFilters(defaultFilters);
+                  setRegisterParty("");
+                }}
+                onUpload={openSingleUpload}
+                onOpenShortcuts={() => setShortcutsOpen(true)}
+                searchRef={searchInput}
+                company={state.company}
+              />
+            ) : (
+              <Register
+                /*
+                Keyed by route: the three registers are the same element in the
+                tree, so without this the tab and page you left Purchases on
+                came with you to Sales — and "Needs Review" is not even one of
+                the tabs Sales has.
+              */
+                key={`${state.company}-${moduleRoute}`}
+                route={moduleRoute}
+                items={moduleItems}
+                syncState={registerSyncState}
+                selected={selected}
+                onSelectedChange={setSelected}
+                onOpen={(x) => {
+                  configure({ queue: moduleItems.map((row) => row.id) });
+                  void router.push(
+                    detailHref(
+                      x.id,
+                      x.status === "Approved" ? "voucher=1" : undefined
+                    )
+                  );
+                }}
+                onDelete={(x) =>
+                  askDelete(`“${x.form.voucherNo || x.file.name}”`, () => {
+                    remove(x.id);
+                    notify(`Deleted ${x.form.voucherNo || x.file.name}.`);
+                  })
+                }
+                onUnbuilt={(what) =>
+                  notify(
+                    `${what} is part of the app, but not this prototype.`,
+                    "info"
+                  )
+                }
+                onCreate={() => createVoucher(moduleRoute)}
+                search={filters.search}
+                onSearchChange={(value) => setFilter("search", value)}
+                /*
                 The register's filters ride on the workspace's own filter
                 state, so leaving a module and coming back finds the register
                 as you left it — and Reset Filters is the one control that
                 clears both screens' idea of "filtered".
               */
-              filters={{
-                party: registerParty,
-                from: filters.from,
-                to: filters.to,
-                min: filters.min,
-                max: filters.max,
-              }}
-              onFilterChange={(key, value) =>
-                key === "party"
-                  ? setRegisterParty(value)
-                  : setFilter(key, value)
-              }
-              onResetFilters={() => {
-                setFilters(defaultFilters);
-                setRegisterParty("");
-              }}
-              pageSize={pageSize}
-              onPageSizeChange={setPageSize}
-              pageSizes={PAGE_SIZES}
-            />
+                filters={{
+                  party: registerParty,
+                  from: filters.from,
+                  to: filters.to,
+                  min: filters.min,
+                  max: filters.max,
+                }}
+                onFilterChange={(key, value) =>
+                  key === "party"
+                    ? setRegisterParty(value)
+                    : setFilter(key, value)
+                }
+                onResetFilters={() => {
+                  setFilters(defaultFilters);
+                  setRegisterParty("");
+                }}
+                pageSize={pageSize}
+                onPageSizeChange={setPageSize}
+                pageSizes={PAGE_SIZES}
+                onUpload={() => goSalesUpload("upload")}
+                onOpenUploadBatch={(batchId, step) =>
+                  goSalesUpload(step, batchId)
+                }
+                initialTab={
+                  typeof router.query.tab === "string"
+                    ? router.query.tab
+                    : undefined
+                }
+              />
+            )
           ) : (
             <>
               {/* Controls stay outside the table's two-axis scroll area. */}
@@ -3341,15 +3682,7 @@ export default function Workspace() {
                               },
                             ]
                       }
-                      onPrimaryButtonClick={() => {
-                        intakeMode.current = "single";
-                        setSource("upload");
-                        setSender(actor);
-                        setUploadErrors([]);
-                        setFiles([]);
-                        setUploadStatus([]);
-                        setDialog("upload");
-                      }}
+                      onPrimaryButtonClick={openSingleUpload}
                     />
                     {!moduleRoute && (
                       <Tabs
@@ -4896,7 +5229,7 @@ export default function Workspace() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {companies.map((c) => (
+                    {state.companies.map((c) => (
                       <SelectItem key={c.id} value={c.id}>
                         {c.name}
                       </SelectItem>
@@ -5903,14 +6236,18 @@ export default function Workspace() {
     </div>
   ) : (
     <SidebarLayout
-      inboxCount={all.filter((x) => x.status === "Needs Review").length}
+      inboxCount={
+        books.filter((x) => !x.created && x.status === "Needs Review").length
+      }
       inboxNew={withinNewWindow(state.launchedAt)}
       activeNavId={navId}
       onNavSelect={selectNav}
       onGuide={guide.openLauncher}
-      companies={companies.map((c) => ({ id: c.id, name: c.name }))}
+      companies={state.companies.map(toUserCompany)}
       companyId={state.company}
       onCompanyChange={changeCompany}
+      onCompanyCreate={createOrganisation}
+      onCompanyRename={renameCompany}
       companyAction={syncButton}
     >
       {content}
@@ -6061,36 +6398,6 @@ const BULK_FIELDS: BulkField[] = [
   "Voucher Type",
   "Ledger",
 ];
-
-const PageButton = ({
-  label,
-  disabled,
-  onClick,
-  children,
-  className,
-}: {
-  label: string;
-  disabled: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  /** For the cohort pager, which wants the brand at low emphasis, not grey. */
-  className?: string;
-}) => (
-  <Button
-    variant="ghost"
-    size="icon"
-    aria-label={label}
-    title={label}
-    className={cn(
-      "text-secondary-foreground hover:bg-section hover:text-primary",
-      className
-    )}
-    disabled={disabled}
-    onClick={onClick}
-  >
-    {children}
-  </Button>
-);
 
 /**
  * Publishes its own height as --inbox-footer-h.
@@ -6258,11 +6565,9 @@ function ReviewForm({
                   <SelectContent>
                     {[
                       ...new Set(
-                        [
-                          f.gst,
-                          ...companies.find((c) => c.id === item.company)!
-                            .branches,
-                        ].filter(Boolean)
+                        [f.gst, ...companyOf(item.company)!.branches].filter(
+                          Boolean
+                        )
                       ),
                     ].map((v) => (
                       <SelectItem key={v} value={v}>

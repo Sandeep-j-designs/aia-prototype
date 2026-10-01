@@ -1,6 +1,12 @@
 import React, { useMemo, useState } from "react";
 import { ChevronRight, Search } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import FilterChip from "@/components/common/filter-chip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -212,3 +218,50 @@ export const ColumnFilter = ({
     </div>
   );
 };
+
+/**
+ * One column's filter, promoted onto the bar (Figma 716:15029).
+ *
+ * The trigger is a Bloocks FilterChip, the same as the Received date chip
+ * beside it. The body is `ColumnFilter` — the same searchable multi-select the
+ * column-header funnel opens — rather than a second list written to look like
+ * it, so "Source" means one thing wherever it is answered.
+ *
+ * The chip says what is applied because it is the only place an applied quick
+ * filter shows: a dropdown that silently filters the grid is worse than a wide
+ * one.
+ */
+export const QuickFilter = ({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: FilterOption[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) => (
+  <Popover>
+    <PopoverTrigger asChild>
+      {/* A Bloocks FilterChip: it names what is applied ("Source:
+          WhatsApp", or a count for several) and its × clears in place. */}
+      <FilterChip
+        label={label}
+        selectionType="multiple"
+        value={selected.map(
+          (value) => options.find((o) => o.value === value)?.label ?? value
+        )}
+        onClearButtonClick={() => onChange([])}
+      />
+    </PopoverTrigger>
+    <PopoverContent align="start" className="w-auto p-0">
+      <ColumnFilter
+        label={label}
+        options={options}
+        selected={selected}
+        onChange={onChange}
+      />
+    </PopoverContent>
+  </Popover>
+);

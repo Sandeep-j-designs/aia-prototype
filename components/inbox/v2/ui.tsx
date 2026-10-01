@@ -2,6 +2,7 @@ import React from "react";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
@@ -41,11 +42,9 @@ import type { Status } from "./store";
    Mirrors the .t-* classes in the Accounts Payable prototype. */
 export const T = {
   /** .t-title — page heading */
-  title:
-    "text-h5 font-medium text-foreground",
+  title: "text-h5 font-medium text-foreground",
   /** .t-section — section heading inside a panel */
-  section:
-    "text-label-1 font-semibold text-secondary-foreground",
+  section: "text-label-1 font-semibold text-secondary-foreground",
   /** .t-label — field label */
   label:
     "text-xs font-semibold leading-4 tracking-[-0.12px] text-secondary-foreground",
@@ -73,8 +72,7 @@ export const T = {
 
 /* --------------------------------------------------------------------- pills
    AP's .pill: 2px 8px, fully round, 11px/600. */
-const pillBase =
-  "max-w-full";
+const pillBase = "max-w-full";
 
 /** Figma 603:5002 table badges: 20px tall, caption text, 4px corners. */
 export const tablePillClass =
@@ -136,8 +134,19 @@ export const StatusPill = ({
   // word inside an intact pill rather than slicing the pill's ground off. The
   // tone survives truncation, and the tone is the part being scanned — which is
   // what lets the column's floor sit below "Needs Review" instead of on it.
-  <Pill tone={STATUS_TONE[status]} className={cn("max-w-full gap-1", className)} maxWidth="100%" title={status}
-    icon={status === "Extracting" ? <Loader2 aria-hidden className="size-2.5 flex-none animate-spin motion-reduce:animate-none" /> : undefined}
+  <Pill
+    tone={STATUS_TONE[status]}
+    className={cn("max-w-full gap-1", className)}
+    maxWidth="100%"
+    title={status}
+    icon={
+      status === "Extracting" ? (
+        <Loader2
+          aria-hidden
+          className="size-2.5 flex-none animate-spin motion-reduce:animate-none"
+        />
+      ) : undefined
+    }
   >
     {status}
     {trailing}
@@ -383,4 +392,46 @@ export const SidePanel = ({
       {children}
     </SheetContent>
   </Sheet>
+);
+
+/** The Bloocks AmountCell's figure: rupees in en-IN groups, paise small and muted. */
+export const AmountText = ({ value }: { value: number }) => {
+  const [rupees, paise] = Math.abs(value).toFixed(2).split(".");
+  return (
+    <>
+      {value < 0 && "−"}₹{new Intl.NumberFormat("en-IN").format(Number(rupees))}
+      <span className="text-caption-1 text-secondary-foreground">.{paise}</span>
+    </>
+  );
+};
+
+/** The pager's icon button — first, previous, next, last. */
+export const PageButton = ({
+  label,
+  disabled,
+  onClick,
+  children,
+  className,
+}: {
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  /** For the cohort pager, which wants the brand at low emphasis, not grey. */
+  className?: string;
+}) => (
+  <Button
+    variant="ghost"
+    size="icon"
+    aria-label={label}
+    title={label}
+    className={cn(
+      "text-secondary-foreground hover:bg-section hover:text-primary",
+      className
+    )}
+    disabled={disabled}
+    onClick={onClick}
+  >
+    {children}
+  </Button>
 );

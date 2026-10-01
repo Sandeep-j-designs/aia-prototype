@@ -1,5 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Maximize, Minimize, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Maximize,
+  Minimize,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -9,9 +16,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { printedSupplier } from "@/config/pages/inbox/ap-document";
+import {
+  MOCK_OWN_REGISTRATION,
+  partyNamed,
+} from "@/config/pages/inbox/mock-parties";
+import type { PrintedLine } from "@/types/pages/inbox";
 import { cn } from "@/lib/utils";
 import { T } from "./ui";
-import { companies, fileUrl, Item } from "./store";
+import { companyOf, fileUrl, Item } from "./store";
 import s from "./preview.module.css";
 
 /**
@@ -67,7 +79,10 @@ export default function Preview({ item }: { item: Item }) {
     const scale = Number(getComputedStyle(p).zoom) || 1;
     const natural = p.offsetHeight / scale || PAGE_W * 1.414;
     const height = (b.clientHeight - 40) / natural;
-    setFit({ width: Math.max(0.1, width), page: Math.max(0.1, Math.min(width, height)) });
+    setFit({
+      width: Math.max(0.1, width),
+      page: Math.max(0.1, Math.min(width, height)),
+    });
   }, []);
   useEffect(() => {
     measure();
@@ -104,7 +119,10 @@ export default function Preview({ item }: { item: Item }) {
   };
 
   return (
-    <div data-guide-id="inbox-preview" className="flex h-full min-h-0 flex-col p-4">
+    <div
+      data-guide-id="inbox-preview"
+      className="flex h-full min-h-0 flex-col p-4"
+    >
       <div
         ref={card}
         className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-neutral-gray bg-background"
@@ -221,15 +239,45 @@ export default function Preview({ item }: { item: Item }) {
 
 /* ----------------------------------------------------------- facsimile */
 
-/** The tenant's branch as printed on its documents — the AP sheet's br-ka. */
-const OUR_GSTIN = "29AAFCK1234M1Z5";
-const OUR_ADDRESS = "Plot 14, KIADB Industrial Area, Bengaluru 562114";
+/**
+ * The tenant as printed on its documents. A company created in the prototype
+ * has no letterhead yet, so it prints what it was set up with.
+ */
+const ourRegistration = (companyId: string) => {
+  const company = companyOf(companyId);
+  return (
+    MOCK_OWN_REGISTRATION[companyId] || {
+      legalName: company?.name || "Our company",
+      gstin: company?.gstin || "",
+      state: company?.state || "",
+      address: "",
+    }
+  );
+};
+
+/** GSTIN state codes the bundled documents use → the state they stand for. */
+const STATE_BY_CODE: Record<string, string> = {
+  "06": "Haryana",
+  "24": "Gujarat",
+  "27": "Maharashtra",
+  "29": "Karnataka",
+  "32": "Kerala",
+  "33": "Tamil Nadu",
+  "36": "Telangana",
+};
 
 /**
  * Always two decimals. A printed tax invoice never renders ₹5,817.6.
  */
 const inr = (n: number) =>
-  n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  n.toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+/** A printed quantity: whole numbers bare, anything else to two places. */
+const qtyText = (n: number) =>
+  n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
 /** "2026-09-10" → "10 Sep 2026"; a date already printed that way is left be. */
 const printedDate = (value: string) => {
@@ -248,18 +296,23 @@ const printedDate = (value: string) => {
  * sales invoice is ours to the customer, so the two parties swap places.
  */
 const Facsimile = ({ item }: { item: Item }) => {
-  const company =
-    companies.find((c) => c.id === item.company)?.name || "Our company";
-  const us = { name: `${company} — Karnataka (29)`, gstin: OUR_GSTIN };
+  const company = companyOf(item.company)?.name || "Our company";
+  const own = ourRegistration(item.company);
+  const us = { name: own.legalName, gstin: own.gstin, address: own.address };
   const bill = item.original.bill;
   const invoice = item.original.invoice;
   const sale = !bill && !!invoice;
   if (!bill && !invoice && item.original.jv)
-    return <JournalNote item={item} company={company} />;
+    return <JournalNote item={item} company={own.legalName} />;
 
   const supplier = printedSupplier(item.original);
   const seller = sale
-    ? { name: company, address: OUR_ADDRESS, gstin: OUR_GSTIN, pan: OUR_GSTIN.slice(2, 12) }
+    ? {
+        name: own.legalName,
+        address: own.address,
+        gstin: own.gstin,
+        pan: own.gstin.slice(2, 12),
+      }
     : {
         name:
           (item.original.vendor !== "—" && item.original.vendor) ||
@@ -269,19 +322,26 @@ const Facsimile = ({ item }: { item: Item }) => {
         gstin: supplier.gstin,
         pan: supplier.pan,
       };
+  const customer =
+    item.original.customer || invoice?.customer || item.form.party;
+  const known = partyNamed(customer);
   const buyer = sale
     ? {
-        name: item.original.customer || invoice?.customer || item.form.party,
-        gstin: "",
+        name: known?.legalName || customer,
+        gstin: known?.gstin || "",
+        address: known?.address || "",
       }
     : us;
 
   const doc = bill || invoice;
-  const lines =
+  const lines: (PrintedLine & { desc: string; amount: number })[] =
     doc?.items ||
     item.form.lines
       .filter((l) => (item.route === "JV" ? l.dr > 0 : true))
-      .map((l) => ({ desc: l.description, amount: item.route === "JV" ? l.dr : l.amount }));
+      .map((l) => ({
+        desc: l.description,
+        amount: item.route === "JV" ? l.dr : l.amount,
+      }));
   const subTotal = doc?.subTotal ?? lines.reduce((sum, l) => sum + l.amount, 0);
   const taxes = doc?.taxes || {};
   const taxRows = (
@@ -299,7 +359,8 @@ const Facsimile = ({ item }: { item: Item }) => {
   const number =
     bill?.supplierInvoiceNo || invoice?.invoiceNo || item.form.invoiceNo;
   const date = bill?.billDate || invoice?.invoiceDate || item.form.date;
-  const place = seller.gstin.startsWith("29") ? "Karnataka" : "Maharashtra";
+  // Where the goods or services were received — the buyer's state.
+  const place = STATE_BY_CODE[buyer.gstin.slice(0, 2)] || own.state || "—";
 
   return (
     <article className={cn(s.paper, s.inv)}>
@@ -321,6 +382,7 @@ const Facsimile = ({ item }: { item: Item }) => {
         <div>
           <div className={s.k}>Billed to</div>
           <strong>{buyer.name}</strong>
+          {buyer.address && <div>{buyer.address}</div>}
           {buyer.gstin && <div>GSTIN: {buyer.gstin}</div>}
         </div>
         <div>
@@ -351,9 +413,13 @@ const Facsimile = ({ item }: { item: Item }) => {
           {lines.map((l, i) => (
             <tr key={i}>
               <td>{l.desc}</td>
-              <td>—</td>
-              <td className={s.num}>—</td>
-              <td className={s.num}>—</td>
+              <td>{l.hsn || "—"}</td>
+              <td className={s.num}>
+                {l.qty != null
+                  ? `${qtyText(l.qty)} ${l.unit ?? ""}`.trim()
+                  : "—"}
+              </td>
+              <td className={s.num}>{l.rate != null ? inr(l.rate) : "—"}</td>
               <td className={s.num}>—</td>
               <td className={s.num}>{inr(l.amount)}</td>
             </tr>
@@ -391,8 +457,8 @@ const Facsimile = ({ item }: { item: Item }) => {
             <br />
           </>
         )}
-        Demo facsimile generated from the bundled sample data — no document
-        was sent anywhere.
+        Demo facsimile generated from the bundled sample data — no document was
+        sent anywhere.
       </div>
     </article>
   );
@@ -406,6 +472,7 @@ const Facsimile = ({ item }: { item: Item }) => {
  * vendor and a GSTIN on a document that never had either.
  */
 const JournalNote = ({ item, company }: { item: Item; company: string }) => {
+  const own = ourRegistration(item.company);
   const jv = item.original.jv!;
   const debit = jv.lines.reduce((sum, l) => sum + (l.dr ?? 0), 0);
   const credit = jv.lines.reduce((sum, l) => sum + (l.cr ?? 0), 0);
@@ -414,8 +481,8 @@ const JournalNote = ({ item, company }: { item: Item; company: string }) => {
       <div className={s.head}>
         <div>
           <h3>{company}</h3>
-          <div>{OUR_ADDRESS}</div>
-          <div>GSTIN: {OUR_GSTIN}</div>
+          <div>{own.address}</div>
+          <div>GSTIN: {own.gstin}</div>
         </div>
         <div className={s.title}>
           JOURNAL
@@ -471,8 +538,8 @@ const JournalNote = ({ item, company }: { item: Item; company: string }) => {
       <div className={s.foot}>
         Internal document — not a tax invoice.
         <br />
-        Demo facsimile generated from the bundled sample data — no document
-        was sent anywhere.
+        Demo facsimile generated from the bundled sample data — no document was
+        sent anywhere.
       </div>
     </article>
   );

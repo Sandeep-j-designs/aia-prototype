@@ -1,4 +1,5 @@
 import type { InboxItem } from "@/types/pages/inbox";
+import { gstinFor, partyNamed } from "./mock-parties";
 
 /**
  * What the inbox hands the AP sheet.
@@ -121,15 +122,16 @@ const OUR_STATE_CODE = "29"; // Karnataka — matches br-ka in the AP book
  * from Maharashtra to Karnataka charges IGST.
  */
 export const printedSupplier = (item: InboxItem) => {
+  const known = partyNamed(item.vendor);
   const taxes = item.bill?.taxes;
   const intra = Boolean(taxes?.cgst != null || taxes?.sgst != null);
-  const pan = "AAACD0596P";
+  const pan = known?.gstin.slice(2, 12) ?? "AAJCS7210K";
   return {
     name: item.vendor ?? "",
-    gstin: `${intra ? OUR_STATE_CODE : "27"}${pan}1ZH`,
+    gstin: known?.gstin ?? gstinFor(intra ? OUR_STATE_CODE : "27", pan),
     pan,
-    address: "456, Outer Ring Road, Bangalore 560037",
-    cin: "U72200KA2014PTC077632",
+    address: known?.address ?? "Address as printed on the document",
+    cin: known?.cin ?? "",
     /* The facsimile prints "Payment due within N days" off this. The AP
        prototype's own sample supplier carries no credit term, so standalone it
        renders "undefined" — worth fixing there; passing it here at least keeps

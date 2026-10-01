@@ -1593,7 +1593,9 @@
 }
 .sceneCaption p {
   max-width: 340px;
-  min-height: 38px;
+  /* Two lines at 12px × 1.6, exactly. 38px was 0.4px short, so the two-line
+     caption grew the card and the steps below jumped between slides. */
+  min-height: 3.2em;
   margin: 7px auto 0;
   font-size: 12px;
   line-height: 1.6;
@@ -1749,7 +1751,7 @@
 }
 .sceneCaption p {
   max-width: 300px;
-  min-height: 34px;
+  min-height: 3.2em; /* two lines at 11px × 1.6; 34px was 1.2px short */
   font-size: 11px;
   margin-top: 6px;
 }

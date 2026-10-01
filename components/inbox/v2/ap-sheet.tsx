@@ -5,6 +5,7 @@ import type { Item } from "./store";
 import { AP_SHEET_VERSION } from "@/components/inbox/v2/ap-sheet-version";
 import { supersedeSheets } from "@/components/inbox/v2/sheet-generation";
 import { asset } from "@/lib/base-path";
+import { cn } from "@/lib/utils";
 
 /**
  * The bills review sheet, mounted into the inbox's OWN document.
@@ -33,11 +34,16 @@ type Props = {
   /** Remount key material — a new bill needs a fresh engine evaluation. */
   itemId: string;
   status: Item["status"];
+  /**
+   * A bill raised by hand has no document behind it, so the sheet's own
+   * document pane and splitter go and the form has the width to itself.
+   */
+  noDocument?: boolean;
 };
 
 const CSS_ID = "ap-sheet-css";
 
-const ApSheet = ({ itemId, status }: Props) => {
+const ApSheet = ({ itemId, status, noDocument }: Props) => {
   const host = useRef<HTMLDivElement>(null);
   const [statusHost, setStatusHost] = useState<HTMLElement | null>(null);
   const [markup, setMarkup] = useState<string | null>(null);
@@ -134,7 +140,10 @@ const ApSheet = ({ itemId, status }: Props) => {
     <>
       <div
         ref={host}
-        className="ap-sheet min-h-0 flex-1 overflow-auto"
+        className={cn(
+          "ap-sheet min-h-0 flex-1 overflow-auto",
+          noDocument && "[&_.doc-pane]:!hidden [&_.splitter]:!hidden"
+        )}
         // The sheet's own markup, verbatim. It is generated from a file in this
         // repo, never from user or network content.
         dangerouslySetInnerHTML={markup ? { __html: markup } : undefined}

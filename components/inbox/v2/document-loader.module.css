@@ -2,6 +2,10 @@
   Document loader — the type switch and first-time extraction. Same palette
   and paper treatment as the welcome card's scene (kickstart.module.css) so
   the two read as one illustration system. Only transform and opacity animate.
+
+  Every scene loop divides 7.2s (3.6, 2.4, 7.2, 1.8, 1.44), so the whole scene
+  repeats every 7.2s and the handoff GIF (Inbox Animations - Final) loops
+  without a seam. Keep new durations on that grid.
 */
 .root {
   display: flex;
@@ -56,7 +60,7 @@
 }
 .source {
   left: 0;
-  animation: drift 4s ease-in-out infinite;
+  animation: drift 3.6s ease-in-out infinite;
 }
 .target {
   right: 0;
@@ -130,7 +134,7 @@
   );
   border-bottom: 1px solid
     color-mix(in srgb, var(--palette-blue-400) 45%, transparent);
-  animation: scan 2.2s ease-in-out infinite;
+  animation: scan 2.4s ease-in-out infinite;
 }
 
 /* ------------------------------------------------------------ the crossing */
@@ -156,7 +160,7 @@
   animation: breathe 2.4s ease-in-out infinite;
 }
 .sparkle svg {
-  animation: turn 6s linear infinite;
+  animation: turn 7.2s linear infinite;
 }
 
 /* Three dots travelling source → target, behind the tile. */
@@ -228,7 +232,7 @@
   height: 7px;
   border-radius: 4px;
   background: var(--palette-blue-100);
-  animation: shimmer 1.4s ease-in-out infinite;
+  animation: shimmer 1.44s ease-in-out infinite;
   transition: opacity 250ms ease;
 }
 .row[data-filled="true"] .rowValue {

@@ -106,7 +106,7 @@ export const COST_CENTRES: CostCentre[] = [
   { id: "cc-finance", name: "Finance", classId: "ccc-department" },
   { id: "cc-south", name: "South Zone", classId: "ccc-region" },
   { id: "cc-west", name: "West Zone", classId: "ccc-region" },
-  { id: "cc-apex", name: "Project Apex", classId: "ccc-project" },
+  { id: "cc-apex", name: "Solvent Plant Expansion", classId: "ccc-project" },
 ];
 
 /**

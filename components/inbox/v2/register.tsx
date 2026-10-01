@@ -46,7 +46,8 @@ import { format, parseISO } from "date-fns";
 import FilterChip from "@/components/common/filter-chip";
 import DateFilter from "@/components/common/date-filter";
 import { T } from "./ui";
-import { actor, routeNames, type Item, type Route } from "./store";
+import { actor, routeNames, useStore, type Item, type Route } from "./store";
+import UploadedInvoicesTable from "./sales-upload/uploaded-invoices-table";
 
 /**
  * The posted-voucher registers — Purchases, Sales, Journal Vouchers.
@@ -220,6 +221,14 @@ type RegisterProps = {
   onDelete: (item: Item) => void;
   /** Says a thing is real in the app but not here — Create, Columns, exports. */
   onUnbuilt: (what: string) => void;
+  /** Create Invoice / New Journal Voucher: a blank voucher, entered by hand. */
+  onCreate: () => void;
+  /** Upload Sales: the spreadsheet upload flow. Sales only. */
+  onUpload?: () => void;
+  /** Open an import batch from the Uploaded Invoice tab at the given step. */
+  onOpenUploadBatch?: (batchId: string, step: "mapping" | "preview") => void;
+  /** The tab to open on, from the URL (?tab=uploads after an upload). */
+  initialTab?: string;
   search: string;
   onSearchChange: (value: string) => void;
   /** Party, date range and amount range — the three the frames name. */
@@ -247,8 +256,8 @@ const REGISTER_COPY: Record<
 > = {
   AP: {
     title: "Purchases",
-    create: "Create Bill",
-    upload: "Upload Bills",
+    create: "Create Purchase Voucher",
+    upload: "Upload Purchases",
     party: "Vendor",
     dateLabel: "Bill Date",
     tabs: [
@@ -259,8 +268,8 @@ const REGISTER_COPY: Record<
   },
   AR: {
     title: "Sales",
-    create: "Create Invoice",
-    upload: "Upload Invoice",
+    create: "Create Sales Voucher",
+    upload: "Upload Sales",
     party: "Customer",
     dateLabel: "Invoice Date",
     tabs: [
@@ -278,7 +287,7 @@ const REGISTER_COPY: Record<
 };
 
 /** Posted is the register's subject; the other tabs are work on its way in. */
-const tabRows = (tab: string, items: Item[]) =>
+export const tabRows = (tab: string, items: Item[]) =>
   tab === "review"
     ? items.filter((x) => !["Approved", "Deleted"].includes(x.status))
     : tab === "uploads"
@@ -294,6 +303,10 @@ const Register = ({
   onOpen,
   onDelete,
   onUnbuilt,
+  onCreate,
+  onUpload,
+  onOpenUploadBatch,
+  initialTab,
   search,
   onSearchChange,
   filters,
@@ -306,7 +319,17 @@ const Register = ({
 }: RegisterProps) => {
   const copy = REGISTER_COPY[route];
   const journal = route === "JV";
-  const [tab, setTab] = useState("all");
+  const [tab, setTab] = useState(
+    initialTab && copy.tabs.some((entry) => entry.id === initialTab)
+      ? initialTab
+      : "all"
+  );
+  const { company } = useStore();
+  /*
+    Sales' Uploaded Invoice tab lists spreadsheet import batches, not
+    vouchers: its own table, and none of the voucher filters apply to it.
+  */
+  const batchTab = route === "AR" && tab === "uploads";
   const [page, setPage] = useState(0);
 
   const rows = useMemo(() => {
@@ -464,16 +487,20 @@ const Register = ({
       <div className="flex flex-wrap items-center gap-3 px-6 pb-4 pt-5">
         <h1 className={cn(T.title, "mr-auto text-2xl")}>{copy.title}</h1>
         {/*
-          Both of these are real destinations in the app. Neither is built
-          here, and saying so is better than a button that quietly does
-          something adjacent.
+          Create opens the register's own voucher form, blank. Upload is a
+          real destination in the app that is not built here, and saying so
+          is better than a button that quietly does something adjacent.
         */}
-        <Button variant="secondary" onClick={() => onUnbuilt(copy.create)}>
+        <Button variant="secondary" onClick={onCreate}>
           <Plus className="h-4 w-4" />
           {copy.create}
         </Button>
         {copy.upload && (
-          <Button onClick={() => onUnbuilt(copy.upload as string)}>
+          <Button
+            onClick={() =>
+              onUpload ? onUpload() : onUnbuilt(copy.upload as string)
+            }
+          >
             <Upload className="h-4 w-4" />
             {copy.upload}
           </Button>
@@ -526,7 +553,7 @@ const Register = ({
           has none of them: it is filtered by narration, which is what the
           search box is for.
         */}
-        {!journal && (
+        {!journal && !batchTab && (
           <>
             <FilterMenu
               label={copy.party}
@@ -607,9 +634,9 @@ const Register = ({
             </FilterMenu>
           </>
         )}
-        {children}
+        {!batchTab && children}
         <span className="flex-1" />
-        {!journal && (
+        {!journal && !batchTab && (
           <Button
             variant="ghost"
             className="whitespace-nowrap"
@@ -623,169 +650,188 @@ const Register = ({
             Reset Filters
           </Button>
         )}
-        <Button
-          variant="outline"
-          className="h-9 whitespace-nowrap"
-          onClick={() => onUnbuilt("Choosing columns")}
-        >
-          <Columns3 className="h-4 w-4" />
-          Columns
-        </Button>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-auto border-t border-neutral-gray">
-        <Table className="border-separate border-spacing-0 [&_td]:border-b [&_td]:border-neutral-gray [&_th]:border-b [&_th]:border-neutral-gray">
-          <TableHeader className="sticky top-0 z-10 bg-accent">
-            <TableRow>
-              <TableHead className="w-12 px-4 py-0 align-middle">
-                <Checkbox
-                  aria-label={`Select every ${journal ? "voucher" : "row"} on this page`}
-                  checked={allOnPage}
-                  onCheckedChange={(checked) =>
-                    onSelectedChange(checked ? pageRows.map((x) => x.id) : [])
-                  }
-                />
-              </TableHead>
-              {columns.map((column) => (
-                <TableHead
-                  key={column.key}
-                  className={cn(
-                    "h-11 whitespace-nowrap px-4 text-xs font-medium text-secondary-foreground",
-                    column.className
-                  )}
-                >
-                  {column.label}
-                </TableHead>
-              ))}
-              <TableHead className="w-20 px-4 text-xs font-medium text-secondary-foreground">
-                Actions
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {pageRows.map((item) => (
-              <TableRow
-                key={item.id}
-                className="cursor-pointer"
-                onClick={() => onOpen(item)}
-              >
-                <TableCell
-                  className="px-4 py-0 align-middle"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <Checkbox
-                    aria-label={`Select ${item.form.voucherNo || item.file.name}`}
-                    checked={selected.includes(item.id)}
-                    onCheckedChange={(checked) =>
-                      onSelectedChange(
-                        checked
-                          ? [...selected, item.id]
-                          : selected.filter((id) => id !== item.id)
-                      )
-                    }
-                  />
-                </TableCell>
-                {columns.map((column) => (
-                  <TableCell
-                    key={column.key}
-                    className={cn(
-                      "h-[52px] max-w-[240px] px-4 text-sm",
-                      column.className
-                    )}
-                  >
-                    {column.cell(item)}
-                  </TableCell>
-                ))}
-                <TableCell
-                  className="px-4"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Actions for ${item.form.voucherNo || item.file.name}`}
-                      >
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => onOpen(item)}>
-                        {item.status === "Approved"
-                          ? "View voucher"
-                          : "Open in Inbox"}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => onDelete(item)}>
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {!pageRows.length && (
-          <div className="px-6 py-16 text-center">
-            <h2 className="text-lg font-semibold">
-              {tab === "all"
-                ? `Nothing posted here yet`
-                : tab === "review"
-                  ? "Nothing waiting for review"
-                  : "Nothing uploaded yet"}
-            </h2>
-            <p className={cn(T.value, "mt-2")}>
-              {tab === "all"
-                ? `Approve a ${route === "AP" ? "bill" : route === "AR" ? "sales invoice" : "journal"} in the Inbox and the voucher it creates is listed here.`
-                : "Documents arrive here as they are received."}
-            </p>
-          </div>
+        {!batchTab && (
+          <Button
+            variant="outline"
+            className="h-9 whitespace-nowrap"
+            onClick={() => onUnbuilt("Choosing columns")}
+          >
+            <Columns3 className="h-4 w-4" />
+            Columns
+          </Button>
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 border-t border-neutral-gray px-6 py-3">
-        <span className={cn(T.cell, "text-foreground")}>Rows per page:</span>
-        <Select
-          value={String(pageSize)}
-          onValueChange={(value) => {
-            onPageSizeChange(Number(value));
-            setPage(0);
-          }}
-        >
-          <SelectTrigger
-            aria-label="Rows per page"
-            className="h-8 w-[72px] rounded-md border-border px-2 py-1 text-sm"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {pageSizes.map((n) => (
-              <SelectItem key={n} value={String(n)}>
-                {n}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <span className="flex-1" />
-        <span className={cn(T.cell, "tabular-nums text-foreground")}>
-          {start} - {end} of {rows.length}
-        </span>
-        <Button
-          variant="ghost"
-          disabled={page === 0}
-          onClick={() => setPage((p) => Math.max(0, p - 1))}
-        >
-          Previous
-        </Button>
-        <Button
-          variant="ghost"
-          disabled={end >= rows.length}
-          onClick={() => setPage((p) => p + 1)}
-        >
-          Next
-        </Button>
-      </div>
+      {batchTab ? (
+        <UploadedInvoicesTable
+          company={company}
+          search={search}
+          onOpen={(batchId, step) => onOpenUploadBatch?.(batchId, step)}
+          pageSize={pageSize}
+          onPageSizeChange={onPageSizeChange}
+          pageSizes={pageSizes}
+        />
+      ) : (
+        <>
+          <div className="min-h-0 flex-1 overflow-auto border-t border-neutral-gray">
+            <Table className="border-separate border-spacing-0 [&_td]:border-b [&_td]:border-neutral-gray [&_th]:border-b [&_th]:border-neutral-gray">
+              <TableHeader className="sticky top-0 z-10 bg-accent">
+                <TableRow>
+                  <TableHead className="w-12 px-4 py-0 align-middle">
+                    <Checkbox
+                      aria-label={`Select every ${journal ? "voucher" : "row"} on this page`}
+                      checked={allOnPage}
+                      onCheckedChange={(checked) =>
+                        onSelectedChange(
+                          checked ? pageRows.map((x) => x.id) : []
+                        )
+                      }
+                    />
+                  </TableHead>
+                  {columns.map((column) => (
+                    <TableHead
+                      key={column.key}
+                      className={cn(
+                        "h-11 whitespace-nowrap px-4 text-xs font-medium text-secondary-foreground",
+                        column.className
+                      )}
+                    >
+                      {column.label}
+                    </TableHead>
+                  ))}
+                  <TableHead className="w-20 px-4 text-xs font-medium text-secondary-foreground">
+                    Actions
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pageRows.map((item) => (
+                  <TableRow
+                    key={item.id}
+                    className="cursor-pointer"
+                    onClick={() => onOpen(item)}
+                  >
+                    <TableCell
+                      className="px-4 py-0 align-middle"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Checkbox
+                        aria-label={`Select ${item.form.voucherNo || item.file.name}`}
+                        checked={selected.includes(item.id)}
+                        onCheckedChange={(checked) =>
+                          onSelectedChange(
+                            checked
+                              ? [...selected, item.id]
+                              : selected.filter((id) => id !== item.id)
+                          )
+                        }
+                      />
+                    </TableCell>
+                    {columns.map((column) => (
+                      <TableCell
+                        key={column.key}
+                        className={cn(
+                          "h-[52px] max-w-[240px] px-4 text-sm",
+                          column.className
+                        )}
+                      >
+                        {column.cell(item)}
+                      </TableCell>
+                    ))}
+                    <TableCell
+                      className="px-4"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Actions for ${item.form.voucherNo || item.file.name}`}
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onSelect={() => onOpen(item)}>
+                            {item.status === "Approved"
+                              ? "View voucher"
+                              : "Open in Inbox"}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => onDelete(item)}>
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {!pageRows.length && (
+              <div className="px-6 py-16 text-center">
+                <h2 className="text-lg font-semibold">
+                  {tab === "all"
+                    ? `Nothing posted here yet`
+                    : tab === "review"
+                      ? "Nothing waiting for review"
+                      : "Nothing uploaded yet"}
+                </h2>
+                <p className={cn(T.value, "mt-2")}>
+                  {tab === "all"
+                    ? `Approve a ${route === "AP" ? "bill" : route === "AR" ? "sales invoice" : "journal"} in the Inbox and the voucher it creates is listed here.`
+                    : "Documents arrive here as they are received."}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 border-t border-neutral-gray px-6 py-3">
+            <span className={cn(T.cell, "text-foreground")}>
+              Rows per page:
+            </span>
+            <Select
+              value={String(pageSize)}
+              onValueChange={(value) => {
+                onPageSizeChange(Number(value));
+                setPage(0);
+              }}
+            >
+              <SelectTrigger
+                aria-label="Rows per page"
+                className="h-8 w-[72px] rounded-md border-border px-2 py-1 text-sm"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {pageSizes.map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    {n}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="flex-1" />
+            <span className={cn(T.cell, "tabular-nums text-foreground")}>
+              {start} - {end} of {rows.length}
+            </span>
+            <Button
+              variant="ghost"
+              disabled={page === 0}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={end >= rows.length}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 };

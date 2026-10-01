@@ -241,7 +241,7 @@ export default function InboxKickstart({
                       <Check size={11} /> Ready to review
                     </span>
                   </div>
-                  <div className={s.reviewVendor}>Acme Supplies</div>
+                  <div className={s.reviewVendor}>Vardhman Packaging</div>
                   <div className={s.reviewAmount}>
                     ₹11,800<span>GST included</span>
                   </div>

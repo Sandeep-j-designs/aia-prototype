@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import AppTopBar, { type Crumb } from "@/components/top-bar-layout";
 import { cn } from "@/lib/utils";
+import type { UserCompany } from "@/types/pages/organisation";
 
 /**
  * PROTOTYPE STUB — same path and the same Props contract as
@@ -68,9 +69,12 @@ type Props = {
   /** Prototype-only — which entry reads as current, since every route is /inbox. */
   activeNavId?: string;
   /** Prototype-only — makes the top bar's company chip a working picker. */
-  companies?: { id: string; name: string }[];
+  companies?: UserCompany[];
   companyId?: string;
   onCompanyChange?: (id: string) => void;
+  /** Passed straight to AppTopBar — the Organisations drawer's create/edit. */
+  onCompanyCreate?: (name: string) => string;
+  onCompanyRename?: (id: string, name: string) => void;
   /** Passed straight to AppTopBar — sits after the company chip. See its prop. */
   companyAction?: ReactNode;
 };
@@ -245,6 +249,8 @@ const SidebarLayout = ({
   companies,
   companyId,
   onCompanyChange,
+  onCompanyCreate,
+  onCompanyRename,
   companyAction,
 }: Props) => {
   const router = useRouter();
@@ -287,9 +293,10 @@ const SidebarLayout = ({
         crumbs={crumbs}
         company={{
           initials:
-            companies?.find((c) => c.id === companyId)?.name?.[0] ?? "S",
+            companies?.find((c) => c.companyUuid === companyId)
+              ?.companyName?.[0] ?? "S",
           name:
-            companies?.find((c) => c.id === companyId)?.name ??
+            companies?.find((c) => c.companyUuid === companyId)?.companyName ??
             "Shakunthalam Oil & Refineries",
         }}
         user={{ initials: "SB", email: "sandeep.balaji@aiaccountant.com" }}
@@ -297,6 +304,8 @@ const SidebarLayout = ({
         companies={companies}
         companyId={companyId}
         onCompanyChange={onCompanyChange}
+        onCompanyCreate={onCompanyCreate}
+        onCompanyRename={onCompanyRename}
         companyAction={companyAction}
       />
 

@@ -15,9 +15,9 @@
  */
 
 export const INCOME_LEDGERS = [
-  "Sales — Petroleum Products",
-  "Sales — Edible Oils",
-  "Sales — Lubricants",
+  "Sales - Edible Oil 5%",
+  "Sales - De-oiled Cake",
+  "Sales - Acid Oil",
   "Sales — Freight Recovered",
   "Service Income",
   "Commission Income",
@@ -31,13 +31,15 @@ export const INCOME_LEDGERS = [
  * creating it, the same way the bill sheet handles an unknown vendor.
  */
 export const CUSTOMERS = [
-  "Theta Hotels Pvt Ltd",
-  "Anne Corp",
-  "Beta Retail Co",
-  "Gamma Trading LLP",
-  "Sigma Ltd",
-  "Tau Foods",
-  "Phi Logistics",
+  "Annapoorna Wholesale",
+  "Chennai Oil Depot",
+  "Hotel Mayura Group",
+  "Malabar Foods",
+  "Reliance Retail Ltd",
+  "Spar Hypermarket",
+  "Sri Lakshmi Traders",
+  "Tata Projects Ltd",
+  "Vijaya Provisions",
 ];
 
 /**
@@ -54,21 +56,21 @@ export const AR_VOUCHER_TYPES = ["Sales", "Credit Note", "Receipt"];
  * reads "Type or Select Item", which is a combobox, not a picker.
  */
 export const STOCK_ITEMS = [
-  "Furnace Oil — IS 1593 LV",
-  "Furnace Oil — IS 1593 HV",
-  "Refined Sunflower Oil — 1L",
-  "Refined Sunflower Oil — 5L",
-  "Industrial Lubricant — SAE 40",
-  "Industrial Lubricant — SAE 90",
-  "HDPE Drum — 210L",
+  "Refined Sunflower Oil — 15 L Tin",
+  "Refined Sunflower Oil — 1 L Pouch",
+  "Refined Groundnut Oil — 15 L Tin",
+  "Refined Palmolein — 15 kg Tin",
+  "Rice Bran Oil — 1 L Pouch",
+  "Kachi Ghani Mustard Oil — 1 L",
+  "De-oiled Cake — Sunflower",
 ];
 
 /** DEV: GET /api/inventory/godowns. */
 export const GODOWNS = [
-  "Main Godown — Peenya",
-  "Bonded Warehouse — Whitefield",
-  "Depot — Hosur Road",
-  "Transit",
+  "Main Location",
+  "Factory - Harihar",
+  "Warehouse - Peenya",
+  "Depot - Mysuru",
 ];
 
 /**
@@ -81,9 +83,8 @@ export const GODOWNS = [
 export const TAXES = [
   "GST 0%",
   "GST 5%",
-  "GST 12%",
   "GST 18%",
-  "GST 28%",
+  "GST 40%",
   "Exempt",
   "Nil Rated",
 ];

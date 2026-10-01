@@ -3,9 +3,9 @@
   overflow: hidden;
   border: 1px solid #e1e7f6;
   border-radius: 16px;
-  background:
-    radial-gradient(ellipse at 50% 20%, #edf1ff, transparent 65%),
-    linear-gradient(145deg, #f9faff, #fff);
+  /* Flat, not a gradient: the scene ships to dev as a GIF on this colour, and
+     a gradient that reshapes with the dialog width would show its edge. */
+  background: #f6f8ff;
 }
 .scene {
   height: 156px;

@@ -56,7 +56,7 @@ const NativeJV = ({
   return (
     <NativeShell
       title="Journal Voucher"
-      subtitle="JV/25-26/018 · 31 Mar 2026"
+      subtitle="JV/26-27/0018 · 31 Aug 2026"
       footer={
         <>
           <ConvertButton source="jv" size="sm" onPick={onConvert} />
@@ -78,7 +78,7 @@ const NativeJV = ({
       <NativePanel>
         <FieldGrid>
           <ReviewField label="Voucher Type" value="Journal" required />
-          <ReviewField label="Voucher No" value="JV/25-26/018" required />
+          <ReviewField label="Voucher No" value="JV/26-27/0018" required />
           <ReviewField label="Voucher Date" value="31 Mar 2026" required />
           <ReviewField label="Cost Centre" value="—" />
         </FieldGrid>

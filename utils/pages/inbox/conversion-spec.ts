@@ -92,7 +92,7 @@ const billToJv = (item: InboxItem): ConversionSpec => {
         sourceValue: bill.supplierInvoiceNo,
         targetLabel: "Voucher No",
         status: "locked",
-        value: `JV/25-26/${idSeed(item.id, 50, 99)}`,
+        value: `JV/26-27/${String(idSeed(item.id, 50, 99)).padStart(4, "0")}`,
       },
       {
         key: "dr",
@@ -168,7 +168,7 @@ const billToInvoice = (item: InboxItem): ConversionSpec => {
         sourceValue: bill.supplierInvoiceNo,
         targetLabel: "Invoice No",
         status: "locked",
-        value: `INV-S/25-26/${idSeed(item.id, 100, 99)}`,
+        value: `SOR/26-27/${String(idSeed(item.id, 100, 99) + 335).padStart(4, "0")}`,
       },
       {
         key: "party",
@@ -245,9 +245,9 @@ const jvToTyped = (
 
   // The original hardcoded this; a real classifier extracts it from the
   // narration. DEV: comes back on the item as an extracted party candidate.
-  const partyHint = "Rentyx Stores Pvt Ltd";
+  const partyHint = "Annapoorna Wholesale";
   const label = target === "Bill" ? "Bill" : "Sales Invoice";
-  const jvDate = "31 Mar 2026";
+  const jvDate = "31 Aug 2026";
 
   return {
     title: `Converting Journal Voucher — ${item.id} → ${label}`,
@@ -283,7 +283,7 @@ const jvToTyped = (
         control: "party-flip",
         partyType: target === "Bill" ? "Vendor" : "Customer",
         partyName: partyHint,
-        partyGstin: "27AABCR4421L1Z3",
+        partyGstin: "29AAFFA8764Y1Z3",
         suggestedLedger:
           target === "Bill"
             ? "Pass-through Expense"
@@ -353,7 +353,7 @@ const arRowToJv = (item: InboxItem, rowIndex: number): ConversionSpec => {
         sourceValue: row.invoiceNo,
         targetLabel: "Voucher No",
         status: "locked",
-        value: `JV/25-26/${idSeed(`${item.id}-${rowIndex}`, 50, 99)}`,
+        value: `JV/26-27/${String(idSeed(`${item.id}-${rowIndex}`, 50, 99)).padStart(4, "0")}`,
       },
       {
         key: "dr",
@@ -496,7 +496,7 @@ const bankingRowToJv = (
         sourceValue: "—",
         targetLabel: "Voucher No",
         status: "locked",
-        value: `JV/25-26/${idSeed(`${item.id}-${txn.date}`, 50, 99)}`,
+        value: `JV/26-27/${String(idSeed(`${item.id}-${txn.date}`, 50, 99)).padStart(4, "0")}`,
       },
       {
         key: "dr",

@@ -10,14 +10,9 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { BookOpen, ChevronDown, ChevronRight, MonitorPlay } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import type { UserCompany } from "@/types/pages/organisation";
+import OrganisationSwitcher from "./organization-switcher";
 
 /**
  * `next/image` prefixes basePath itself for an optimised image, but not for an
@@ -42,11 +37,15 @@ type Props = {
   /**
    * Prototype-only. Production reads the company list from
    * useUserCompaniesStore and switches in place; passing these turns the chip
-   * into a working picker so the prototype keeps its multi-company scenarios.
+   * into the Organisations drawer so the prototype keeps its multi-company
+   * scenarios.
    */
-  companies?: { id: string; name: string }[];
+  companies?: UserCompany[];
   companyId?: string;
   onCompanyChange?: (id: string) => void;
+  /** Creates an organisation, makes it active and returns its id. */
+  onCompanyCreate?: (name: string) => string;
+  onCompanyRename?: (id: string, name: string) => void;
   /**
    * Rendered immediately after the company switcher — this is where Sync
    * lives ("Sync Management - Phase 2" Figma).
@@ -68,6 +67,8 @@ const AppTopBar = ({
   companies,
   companyId,
   onCompanyChange,
+  onCompanyCreate,
+  onCompanyRename,
   companyAction,
 }: Props) => {
   const focus =
@@ -78,8 +79,8 @@ const AppTopBar = ({
     "transition-colors duration-150 hover:bg-surface-muted hover:border-topnav-text data-[state=open]:border-topnav-text motion-reduce:transition-none",
     focus
   );
-  // SelectTrigger clamps direct spans with display: -webkit-box. Keep the
-  // avatar's flex layout so that rule cannot push the initial to the top.
+  // The static chip, shown when no company list is passed. The switcher
+  // draws the same badge itself.
   const initialsBadge = (
     <span
       aria-hidden="true"
@@ -152,32 +153,15 @@ const AppTopBar = ({
       </div>
 
       <div className="col-start-1 col-end-4 flex min-w-0 items-center justify-end gap-2 sm:col-start-3 sm:gap-3">
-        {companies?.length ? (
-          <Select value={companyId} onValueChange={onCompanyChange}>
-            <SelectTrigger
-              aria-label="Switch company"
-              title={company.name}
-              className={cn(
-                chip,
-                "gap-1.5 text-label-2 shadow-none",
-                // The trigger ships its own caret as a direct child; size it
-                // down rather than hiding it and adding a second one.
-                "[&>svg]:h-[13px] [&>svg]:w-[13px] [&>svg]:flex-none [&>svg]:opacity-100 [&>svg]:transition-transform [&[data-state=open]>svg]:rotate-180"
-              )}
-            >
-              {initialsBadge}
-              <span className="min-w-0 max-w-[220px] truncate">
-                <SelectValue />
-              </span>
-            </SelectTrigger>
-            <SelectContent align="end">
-              {companies.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        {companies?.length && onCompanyChange ? (
+          <OrganisationSwitcher
+            companies={companies}
+            selectedCompanyUuid={companyId}
+            onSelect={onCompanyChange}
+            onCreate={onCompanyCreate ?? (() => companyId ?? "")}
+            onRename={onCompanyRename ?? (() => undefined)}
+            className={chip}
+          />
         ) : (
           <button type="button" title={company.name} className={chip}>
             {initialsBadge}

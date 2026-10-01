@@ -16,7 +16,7 @@ import {
   blankArLedger,
   blankArSheet,
   arRowId,
-  companies,
+  companyOf,
   setArSheet,
   type Form,
   type Item,
@@ -68,7 +68,7 @@ const SalesInvoice = ({ item, attempted, readOnly, onEdit }: Props) => {
   const sheet =
     (readOnly ? item.arSnapshot || item.arSheet : item.arSheet) ??
     blankArSheet();
-  const branches = companies.find((c) => c.id === item.company)?.branches ?? [];
+  const branches = companyOf(item.company)?.branches ?? [];
   const totals = arTotals(sheet);
 
   /** Every write goes through the store, which re-derives `form.lines`. */
