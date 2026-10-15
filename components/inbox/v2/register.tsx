@@ -218,6 +218,8 @@ type RegisterProps = {
   selected: string[];
   onSelectedChange: (ids: string[]) => void;
   onOpen: (item: Item) => void;
+  /** The row whose record is docked beside the table, lit while it is. */
+  activeId?: string;
   onDelete: (item: Item) => void;
   /** Says a thing is real in the app but not here — Create, Columns, exports. */
   onUnbuilt: (what: string) => void;
@@ -301,6 +303,7 @@ const Register = ({
   selected,
   onSelectedChange,
   onOpen,
+  activeId,
   onDelete,
   onUnbuilt,
   onCreate,
@@ -674,7 +677,11 @@ const Register = ({
       ) : (
         <>
           <div className="min-h-0 flex-1 overflow-auto border-t border-neutral-gray">
-            <Table className="border-separate border-spacing-0 [&_td]:border-b [&_td]:border-neutral-gray [&_th]:border-b [&_th]:border-neutral-gray">
+            {/* Hairline column rules, as on the bills register — every
+                page-level table gets them (decided 7 Oct). This register had
+                been left with row rules only. Nothing here is pinned, so no
+                bookend edge can double a rule. */}
+            <Table className="border-separate border-spacing-0 [&_td]:border-b [&_td]:border-r [&_td]:border-neutral-gray [&_td:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-neutral-gray [&_th:last-child]:border-r-0">
               <TableHeader className="sticky top-0 z-10 bg-accent">
                 <TableRow>
                   <TableHead className="w-12 px-4 py-0 align-middle">
@@ -708,7 +715,11 @@ const Register = ({
                 {pageRows.map((item) => (
                   <TableRow
                     key={item.id}
-                    className="cursor-pointer"
+                    aria-current={item.id === activeId ? "true" : undefined}
+                    className={cn(
+                      "cursor-pointer",
+                      item.id === activeId && "bg-accent hover:bg-accent"
+                    )}
                     onClick={() => onOpen(item)}
                   >
                     <TableCell

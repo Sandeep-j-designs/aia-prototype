@@ -433,6 +433,8 @@
 }
 .ap-sheet .control__input::placeholder{color:var(--text-muted);opacity:1}
 .ap-sheet .control.is-disabled{opacity:.6;pointer-events:none}
+/* filled by the system, not the user — the same ground as .nmd__ctl--ro */
+.ap-sheet .control--ro{background:var(--bg-secondary);border-color:var(--stroke)}
 .ap-sheet .control__date{position:absolute;inset:0;width:100%;height:100%;opacity:0;border:none;padding:0;cursor:pointer}
 .ap-sheet .control.is-extracted, .ap-sheet .cell.is-extracted{background:#eef1ff;border-color:var(--brand-soft)}
 /* The header-field equivalent of .cell--new — same ground, same edge, so the

@@ -1434,6 +1434,19 @@ const MASTERS = {
     {id:'US',name:'United States'},{id:'VN',name:'Vietnam'}
   ],
 
+  /* the e-way bill's fixed lists, as the portal and Tally spell them */
+  ewayDocTypes:[
+    {id:'na',name:'Not Applicable'},{id:'boe',name:'Bill of Entry'},{id:'bos',name:'Bill of Supply'},
+    {id:'dc',name:'Delivery Challan'},{id:'oth',name:'Others'},{id:'inv',name:'Tax Invoice'}
+  ],
+  transportModes:[
+    {id:'na',name:'Not Applicable'},{id:'1',name:'1 – Road'},{id:'2',name:'2 – Rail'},
+    {id:'3',name:'3 – Air'},{id:'4',name:'4 – Ship'}
+  ],
+  vehicleTypes:[
+    {id:'na',name:'Not Applicable'},{id:'O',name:'O – Over Dimensional Cargo'},{id:'R',name:'R – Regular'}
+  ],
+
   ports:[
     {id:'INNSA1',name:'INNSA1 — Nhava Sheva (Sea)'},{id:'INMUN1',name:'INMUN1 — Mundra (Sea)'},
     {id:'INMAA1',name:'INMAA1 — Chennai (Sea)'},    {id:'INCOK1',name:'INCOK1 — Cochin (Sea)'},
@@ -1900,10 +1913,10 @@ let SAMPLE = {
   /* What the invoice carries past the voucher header. The customer's order
      reference is on it — it is in the narration above — and their PO carries
      no order date, which is exactly the case the conditional rules exist for.
-     Order and Despatch Details are switched off by default, so these two
+     Order and Dispatch Details are switched off by default, so these two
      arrive held rather than filled, and the sheet has to say so. */
   extra:{
-    consigneeName:    'br-ka',
+    consigneeName:    'v-technova',
     consigneeAddress: 'No. 42, 1st Floor, HSR Layout Sector 2, Bengaluru',
     consigneeState:   'KA',
     consigneePincode: '560102',
@@ -2126,15 +2139,15 @@ function toastAction(msg,label,fn,kind='ok'){
 /* ============================================================================
    2a. OPTIONAL FIELD GROUPS
    --------------------------------------------------------------------------
-   Four groups of voucher fields that most invoices have no use for. A goods
-   sales collected at the counter names no consignee, clears no port and
-   quotes no order — printing those thirty fields on every invoice would bury
-   the eight that decide the posting.
+   Six groups of voucher fields that most invoices have no use for. A counter
+   sale names no consignee, clears no port and quotes no order — printing
+   those fifty fields on every invoice would bury the eight that decide the
+   posting.
 
    So they are configuration rather than layout: Field Configuration says
    which groups this company enters, and the sheet is built from the answer.
    Only Consignee is on out of the box, because a ship-to that differs from
-   the invoice-to is the one of the four that turns up on ordinary sales.
+   the bill-to is the one of the six that turns up on ordinary sales.
 
    The config is deliberately not part of `state` — it belongs to the company,
    not to the invoice, so discarding an invoice or starting the next one leaves it
@@ -2145,47 +2158,94 @@ function toastAction(msg,label,fn,kind='ok'){
    stated once its document number is. Nothing here is required on its own —
    these are optional groups — so the requirement is always conditional, and
    it is enforced where the fields are entered rather than on the sheet. */
+/* Format rules from the field reference, checked once a value is there.
+   Blank is never a format problem — whether a field may be blank is `req`'s
+   business. */
+const FMT = {
+  pin:         {test:v=>/^[1-9][0-9]{5}$/.test(v),          msg:'Enter a 6-digit pincode.'},
+  gstin:       {test:v=>/^[0-9A-Z]{15}$/i.test(v),           msg:'GSTIN/UIN is 15 letters and digits.'},
+  ewb:         {test:v=>/^[0-9]{12}$/.test(v),               msg:'E-Way Bill No is 12 digits — no letters or symbols.'},
+  km:          {test:v=>/^[0-9]{1,4}$/.test(v) && +v>0 && +v<=4000, msg:'Enter a distance from 1 to 4,000 km.'},
+  transporter: {test:v=>/^[0-9]{2}[0-9A-Z]{13}$/i.test(v),  msg:'Transporter ID is 15 characters — 2 digits, then 13 letters or digits.'},
+  irn:         {test:v=>/^[0-9a-f]{64}$/i.test(v),          msg:'IRN is 64 letters and digits.'}
+};
 const FIELD_GROUPS = [
   {id:'consignee', name:'Consignee Details', on:true, fields:[
-    {id:'consigneeName',    name:'Consignee (Ship To)',   type:'select', list:'branches', ph:'Select Consignee (Ship To)', wide:true},
-    {id:'consigneeAddress', name:'Address',               type:'textarea', ph:'Enter Address', wide:true},
-    {id:'consigneeState',   name:'Consignee State',       type:'select', list:'states',    ph:'Select State'},
-    {id:'consigneeCountry', name:'Consignee Country',     type:'select', list:'countries', ph:'Select Country'},
-    {id:'consigneePincode', name:'Pincode',               type:'text',   ph:'Enter Pincode', mode:'numeric'},
-    {id:'consigneeGstin',   name:'Consignee (GSTIN/UIN)', type:'text',   ph:'Enter GSTIN/UIN'},
+    {id:'consigneeName',    name:'Consignee (Ship To)',   type:'select', list:'customers', ph:'Select Consignee (Ship To)', wide:true,
+     note:'Defaults to the customer on this invoice. Any customer can be chosen instead.'},
+    {id:'consigneeAddress', name:'Address (Consignee)',   type:'textarea', ph:'Enter Address', wide:true, max:100},
+    {id:'consigneeState',   name:'State (Consignee)',     type:'select', list:'states',    ph:'Select State'},
+    {id:'consigneeCountry', name:'Country (Consignee)',   type:'select', list:'countries', ph:'Select Country'},
+    {id:'consigneePincode', name:'Pincode (Consignee)',   type:'text',   ph:'Enter Pincode', mode:'numeric', max:6, fmt:FMT.pin},
+    {id:'consigneeGstin',   name:'Consignee (GSTIN/UIN)', type:'text',   ph:'Enter GSTIN/UIN', max:15, fmt:FMT.gstin},
     {id:'placeOfSupply',    name:'Place of Supply',       type:'select', list:'states',    ph:'Select Place of Supply', wide:true}
   ]},
-  {id:'import', name:'Import Details', on:false, fields:[
-    {id:'placeOfReceipt',  name:'Place of Receipt by Shipper',      type:'text',   ph:'Enter place of receipt', wide:true},
-    {id:'vesselFlightNo',  name:'Vessel / Flight / Vehicle No',     type:'text',   ph:'Enter vessel / flight / vehicle no', wide:true},
-    {id:'portOfLoading',   name:'Port of Loading',                  type:'text',   ph:'Enter port of loading'},
-    {id:'portOfDischarge', name:'Port of Discharge',                type:'text',   ph:'Enter port of discharge'},
-    {id:'countryTo',       name:'Country To',                       type:'select', list:'countries', ph:'Select Country', wide:true},
-    {id:'boeNo',           name:'Bill of Entry / Shipping Invoice No', type:'text',   ph:'Enter invoice of entry / shipping invoice no', wide:true},
-    {id:'boeDate',         name:'Bill of Entry / Shipping Invoice Date',type:'date',  ph:'Select Date',
-     note:'Mandatory when Invoice No. is filled.', req:'boeNo'},
-    {id:'portCode',        name:'Port Code',                        type:'select', list:'ports', ph:'Select Port Code',
-     note:'Mandatory when Invoice No. is filled. Uses ICEGATE 6-character port codes.', req:'boeNo'}
+  {id:'import', name:'Export Details', on:false, fields:[
+    {id:'placeOfReceipt',  name:'Place of Receipt by Shipper',    type:'text',   ph:'Enter place of receipt', wide:true, max:25},
+    {id:'vesselFlightNo',  name:'Vessel/Flight/Motor-Vehicle No', type:'text',   ph:'Enter vessel / flight / motor-vehicle no', wide:true, max:25},
+    {id:'portOfLoading',   name:'Port of Loading',                type:'text',   ph:'Enter port of loading', max:10},
+    {id:'portOfDischarge', name:'Port of Discharge',              type:'text',   ph:'Enter port of discharge', max:10},
+    {id:'countryTo',       name:'Country To',                     type:'select', list:'countries', ph:'Select Country', wide:true},
+    {id:'boeNo',           name:'Shipping Bill No', type:'text', ph:'Enter shipping bill no', wide:true, max:50},
+    {id:'boeDate',         name:'Shipping Bill Date', type:'date', ph:'Select Date',
+     note:'Mandatory when Shipping Bill No is filled.', req:'boeNo'},
+    {id:'portCode',        name:'Port Code',                      type:'select', list:'ports', ph:'Select Port Code',
+     note:'Mandatory when Shipping Bill No is filled. Uses ICEGATE 6-character port codes.', req:'boeNo'}
   ]},
-  {id:'receipt', name:'Receipt Details', on:false, fields:[
-    {id:'receiptNoteNo',   name:'Delivery Note No(s)',             type:'text', ph:'Enter delivery note no(s)'},
+  {id:'receipt', name:'Dispatch Details', on:false, fields:[
+    {id:'receiptNoteNo',   name:'Dispatch Note No(s)', type:'text', ph:'Enter dispatch note no(s)', max:25},
     {id:'receiptNoteDate', name:'Note Date',                       type:'date', ph:'Select Date',
-     note:'Mandatory when Note No. is filled.', req:'receiptNoteNo'},
-    {id:'grnNo',           name:'Despatch Doc No',                 type:'text', ph:'Enter despatch doc no', wide:true},
-    {id:'dispatchedThrough',name:'Dispatched Through',             type:'text', ph:'Enter dispatch mode'},
-    {id:'dispatchDest',    name:'Destination',                     type:'text', ph:'Enter destination'},
-    {id:'carrier',         name:'Carrier Name / Agent',            type:'text', ph:'Enter carrier name / agent', wide:true},
-    {id:'ladingNo',        name:'Invoice of Lading / LR-RR No',       type:'text', ph:'Enter invoice of lading / LR-RR no'},
-    {id:'ladingDate',      name:'Invoice of Lading Date',             type:'date', ph:'Select Date',
-     note:'Mandatory when Lading No. is filled.', req:'ladingNo'}
+     note:'Mandatory when Dispatch Note No(s) is filled.', req:'receiptNoteNo'},
+    {id:'grnNo',           name:'Dispatch Doc No', type:'text', ph:'Enter dispatch doc no', wide:true, max:25},
+    {id:'dispatchedThrough',name:'Dispatched Through',             type:'text', ph:'Enter dispatch mode', max:25},
+    {id:'dispatchDest',    name:'Destination',                     type:'text', ph:'Enter destination', max:25},
+    {id:'carrier',         name:'Carrier Name/Agent',              type:'text', ph:'Enter carrier name / agent', wide:true, max:25},
+    {id:'ladingNo',        name:'Bill of Lading / LR-RR No',       type:'text', ph:'Enter bill of lading / LR-RR no', max:25},
+    {id:'ladingDate',      name:'Bill of Lading Date',             type:'date', ph:'Select Date',
+     note:'Mandatory when Bill of Lading / LR-RR No is filled.', req:'ladingNo'}
   ]},
   {id:'order', name:'Order Details', on:false, fields:[
-    {id:'orderNo',      name:'Order No(s)',              type:'text', ph:'Enter order no(s)'},
+    {id:'orderNo',      name:'Order No(s)',              type:'text', ph:'Enter order no(s)', max:25},
     {id:'orderDate',    name:'Order Date',               type:'date', ph:'Select Date',
-     note:'Mandatory when Order No. is filled.', req:'orderNo'},
-    {id:'paymentTerms', name:'Mode / Terms of Payment',  type:'text', ph:'Enter mode / terms of payment', wide:true},
-    {id:'otherRefs',    name:'Other References',         type:'text', ph:'Enter other references', wide:true},
-    {id:'deliveryTerms',name:'Terms of Delivery',        type:'text', ph:'Enter terms of delivery', wide:true}
+     note:'Mandatory when Order No(s) is filled.', req:'orderNo'},
+    {id:'paymentTerms', name:'Mode/Terms of Payment',    type:'text', ph:'Enter mode / terms of payment', wide:true, max:25},
+    {id:'otherRefs',    name:'Other References',         type:'text', ph:'Enter other references', wide:true, max:25},
+    {id:'deliveryTerms',name:'Terms of Delivery',        type:'textarea', ph:'Enter terms of delivery', wide:true, max:125}
+  ]},
+  /* Part A names the movement, Part B the vehicle. Once there is an e-way
+     bill number the portal will not take it without both, so those fields are
+     mandatory in its company — and only in its company. */
+  {id:'eway', name:'E-Way Bill Details', on:false, fields:[
+    {id:'ewayNo',          name:'E-Way Bill No',             type:'text',   ph:'Enter 12-digit e-way bill no', mode:'numeric', max:12, fmt:FMT.ewb},
+    {id:'ewayDate',        name:'E-Way Bill Date',           type:'date',   ph:'Select Date',
+     note:'Mandatory when E-Way Bill No is filled.', req:'ewayNo'},
+    {id:'ewayDocType',     name:'Document Type',             type:'select', list:'ewayDocTypes', ph:'Select Document Type',
+     note:'Mandatory when E-Way Bill No is filled.', req:'ewayNo'},
+    {id:'ewayDispatchFrom',name:'Dispatch From',             type:'text',   ph:'Enter place of dispatch', max:100},
+    {id:'ewayShipTo',      name:'Ship To',                   type:'text',   ph:'Enter place of delivery', max:100},
+    {id:'ewayDistance',    name:'Pin to Pin Distance as per Portal', type:'text', ph:'Enter distance in km', mode:'numeric', max:4, fmt:FMT.km,
+     note:'Mandatory when E-Way Bill No is filled. Up to 4,000 km.', req:'ewayNo'},
+    {id:'transporterName', name:'Transporter Name',          type:'text',   ph:'Enter transporter name', max:50},
+    {id:'transporterId',   name:'Transporter ID',            type:'text',   ph:'Enter 15-character transporter ID', max:15, fmt:FMT.transporter,
+     note:'Mandatory when E-Way Bill No is filled.', req:'ewayNo'},
+    {id:'transportMode',   name:'Mode',                      type:'select', list:'transportModes', ph:'Select Mode',
+     note:'Mandatory when E-Way Bill No is filled.', req:'ewayNo'},
+    {id:'transportDocNo',  name:'Doc/Lading/RR/Air Way No',  type:'text',   ph:'Enter doc / lading / RR / air way no', max:50},
+    {id:'transportDocDate',name:'Doc/Lading/RR/Air Way Date',type:'date',   ph:'Select Date'},
+    {id:'vehicleNo',       name:'Vehicle Number',            type:'text',   ph:'Enter vehicle number', max:50,
+     note:'Mandatory when E-Way Bill No is filled.', req:'ewayNo'},
+    {id:'vehicleType',     name:'Vehicle Type',              type:'select', list:'vehicleTypes', ph:'Select Vehicle Type',
+     note:'Mandatory when E-Way Bill No is filled.', req:'ewayNo'}
+  ]},
+  /* On a sale the IRN is ours, and it is the IRP's to issue: these three come
+     back from the portal when the e-invoice is generated, and nobody types them. */
+  {id:'einvoice', name:'E-Invoice Details', on:false, fields:[
+    {id:'ackNo',      name:'Ack No',        type:'text', ph:'Generated with the IRN', ro:true,
+     note:'Returned by the IRP when the e-invoice is generated.'},
+    {id:'ackDate',    name:'Ack Date',      type:'date', ph:'Generated with the IRN', ro:true},
+    {id:'irn',        name:'IRN',           type:'text', ph:'Generated with the IRN', wide:true, ro:true},
+    {id:'billToPlace',name:'Bill to Place', type:'text', ph:'Enter bill-to place', max:50},
+    {id:'shipToPlace',name:'Ship to Place', type:'text', ph:'Enter ship-to place', max:50}
   ]}
 ];
 const fieldById = id=>FIELD_GROUPS.flatMap(g=>g.fields).find(f=>f.id===id);
@@ -4760,6 +4820,16 @@ function setMode(next){
    locks every cost centre field to a value it cannot show and cannot set. */
 const ccHeader = ()=> state.ccMode==='centre' && byId(MASTERS.costCentres,state.invoiceCostCentre)
   ? state.invoiceCostCentre : '';
+/* The Inbox's form carries cost centres and classes by NAME, as the record
+   page shows them, and only the header allocation that is switched on — the
+   sheet keeps both selections across the toggle, but only one is booked. */
+const ccFormValue = mode=> state.ccMode!==mode ? '' : mode==='class'
+  ? byId(MASTERS.costCentreClasses,state.costCentreClass)?.name||''
+  : byId(MASTERS.costCentres,state.invoiceCostCentre)?.name||'';
+/* By id, by name, or by the name's leading words — the Inbox's masters say
+   'Finance' where this sheet's say 'Finance & Accounts'. */
+const ccRef = (list,v)=> v ? (list.find(x=>x.id===v||x.name===v)
+  || list.find(x=>x.name.startsWith(v+' '))||{}).id||'' : '';
 const ccLocked = ()=> state.ccMode==='class' || !!ccHeader();
 function ccPlaceholder(){
   if(state.ccMode!=='class'){
@@ -7167,8 +7237,7 @@ function validate(paint){
 
   /* one entry per unfinished conditional pair, so the count on the sheet is the
      real number of fields outstanding rather than "additional details: 1" */
-  extraProblems().forEach(p=>errs.push({key:'__extra', name:p.field.name,
-    msg:`${p.field.name} is required once ${p.trigger.name} is filled`}));
+  extraProblems().forEach(p=>errs.push({key:'__extra', name:p.field.name, msg:p.line}));
 
   if(paint){
     const keys = new Set(errs.map(e=>e.key));
@@ -10170,11 +10239,41 @@ $('#fc-save').addEventListener('click',()=>{
    need it — and switching it off there should behave exactly like switching
    it off in Field Configuration, Cancel included. */
 let afDraft = null, afTab = null, afOpen = true;   // afOpen: the From Your Invoice card
+let afTouched = new Set();                          // fields left at least once, for format errors
+
+/* party masters keep the pincode on the end of the address, after a dash */
+const splitPin = a=>{
+  const m = String(a||'').match(/^(.*?)\s+—\s+([0-9]{6})$/);
+  return m ? [m[1], m[2]] : [a||'', ''];
+};
+/* A consignee on a sale is a customer — by default the one being invoiced.
+   Naming it answers the five fields under it, overwriting only what is still
+   blank, so an address typed for this one delivery is not lost to the master's. */
+function fillConsignee(values, id){
+  const c = byId(MASTERS.customers, id);
+  if(!c) return false;
+  const [address, pin] = splitPin(c.address);
+  const fill = (k,x)=>{ if(x && !String(values[k]??'').trim()) values[k] = x; };
+  fill('consigneeAddress', address);
+  fill('consigneeState',   c.state);
+  fill('consigneeCountry', 'IN');
+  fill('consigneePincode', pin);
+  fill('consigneeGstin',   c.gstin);
+  fill('placeOfSupply',    c.state);
+  return true;
+}
 
 function openAdditional(){
   const live = fcLive();
   if(!live.length) return;
   afDraft = {values:{...state.extra}, cfg:fcClone(fieldConfig)};
+  afTouched = new Set();
+  /* Consignee (Ship To) is mandatory by default, and the default is the customer */
+  const shipTo = live.find(g=>g.id==='consignee')?.fields.some(f=>f.id==='consigneeName');
+  if(shipTo && !afDraft.values.consigneeName && state.customer){
+    afDraft.values.consigneeName = state.customer;
+    fillConsignee(afDraft.values, state.customer);
+  }
   if(!live.some(g=>g.id===afTab)) afTab = live[0].id;
   $('#af-sub').textContent = byId(MASTERS.voucherTypes,state.voucherType)?.name || 'Sales';
   renderAfDialog();
@@ -10197,7 +10296,7 @@ function fromYourInvoice(){
       </button>
     </div>
     <div class="fyb__grid" id="fyb-grid"${afOpen?'':' hidden'}>
-      ${chip('Customer / Customer', byId(MASTERS.customers,state.customer)?.name)}
+      ${chip('Customer', byId(MASTERS.customers,state.customer)?.name)}
       ${chip('Billing Address', state.billingAddress)}
       ${chip('GST Treatment', byId(MASTERS.gstTreatments,state.gstTreatment)?.name)}
       ${chip('GSTIN', state.gstin)}
@@ -10209,6 +10308,11 @@ function fromYourInvoice(){
 
 function afControl(f){
   const v = afDraft.values[f.id] ?? '';
+  /* filled by someone other than the user — shown, never typed into */
+  if(f.ro) return `<label class="control control--ro">
+      <input class="control__input t-value" type="text" data-xr="${f.id}" readonly tabindex="-1"
+             value="${esc(v && f.type==='date' ? fmtDate(v) : v)}" placeholder="${esc(f.ph)}" aria-label="${esc(f.name)}">
+    </label>`;
   if(f.type==='date') return `<label class="control">
       <span class="t-value" data-xfd="${f.id}" data-placeholder="${esc(f.ph)}">${v?esc(fmtDate(v)):esc(f.ph)}</span>
       <span class="ico ico-12 ico--muted"><svg width="10.5" height="11.5"><use href="#i-calendar"/></svg></span>
@@ -10216,13 +10320,14 @@ function afControl(f){
     </label>`;
   if(f.type==='select') return `<label class="control">
       <select class="control__select t-value" data-xf="${f.id}" aria-label="${esc(f.name)}">
-        ${options(MASTERS[f.list], f.ph, v)}</select>
+        ${(f.list==='consignees' ? options2 : options)(MASTERS[f.list], f.ph, v)}</select>
     </label>`;
   if(f.type==='textarea')
-    return `<textarea data-xf="${f.id}" placeholder="${esc(f.ph)}" aria-label="${esc(f.name)}">${esc(v)}</textarea>`;
+    return `<textarea data-xf="${f.id}" placeholder="${esc(f.ph)}" aria-label="${esc(f.name)}"${
+      f.max?` maxlength="${f.max}"`:''}>${esc(v)}</textarea>`;
   return `<label class="control">
       <input class="control__input t-value" type="text" data-xf="${f.id}" value="${esc(v)}"
-             placeholder="${esc(f.ph)}"${f.mode?` inputmode="${f.mode}"`:''}>
+             placeholder="${esc(f.ph)}"${f.mode?` inputmode="${f.mode}"`:''}${f.max?` maxlength="${f.max}"`:''}>
     </label>`;
 }
 
@@ -10266,28 +10371,44 @@ function renderAfPanel(){
    Save is allowed, and the sheet runs it over committed state so an unfinished
    pair can be named outside without opening anything. */
 function reqProblems(values, cfg){
-  return fcLive(cfg).flatMap(g=>g.fields.filter(f=>f.req &&
-      String(values[f.req]??'').trim()!=='' &&
-      String(values[f.id]??'').trim()==='')
-    .map(f=>({group:g, field:f, trigger:fieldById(f.req)})));
+  return fcLive(cfg).flatMap(g=>g.fields.flatMap(f=>{
+    const v = String(values[f.id]??'').trim();
+    if(f.req && v==='' && String(values[f.req]??'').trim()!==''){
+      const trigger = fieldById(f.req);
+      return [{group:g, field:f, kind:'req', msg:`Required once ${trigger.name} is filled.`,
+               line:`${f.name} is required once ${trigger.name} is filled`}];
+    }
+    /* a value in the wrong shape would be refused by Tally or the portal, so
+       it holds the save the same way a missing one does */
+    if(f.fmt && v!=='' && !f.fmt.test(v))
+      return [{group:g, field:f, kind:'fmt', msg:f.fmt.msg, line:`${f.name}: ${f.fmt.msg}`}];
+    return [];
+  }));
 }
 const afProblems    = ()=>reqProblems(afDraft.values, afDraft.cfg);
 const extraProblems = ()=>reqProblems(state.extra, fieldConfig);
 function afCheck(){
   const bad = afProblems();
   const here = new Set(bad.filter(p=>p.group.id===afTab).map(p=>p.field.id));
+  /* a format is judged once the field is left, not at every keystroke — the
+     first digit of a twelve-digit number is not a mistake yet */
+  const msg = new Map(bad.filter(p=>p.group.id===afTab && (p.kind==='req' || afTouched.has(p.field.id)))
+    .map(p=>[p.field.id, p.msg]));
   $$('#af-panel [data-xfield]').forEach(el=>{
-    const f = fieldById(el.dataset.xfield);
-    const on = here.has(f.id);
+    const id = el.dataset.xfield;
+    const on = here.has(id) && msg.has(id);
     el.classList.toggle('is-invalid', on);
-    if(on) el.querySelector('.field__error').textContent = `Required once ${f.req && fieldById(f.req).name} is filled.`;
+    if(on) el.querySelector('.field__error').textContent = msg.get(id);
   });
   const warn = $('#af-warn');
   warn.hidden = !bad.length;
   /* the same sentence the sheet uses. Which sections they are in is the rail's
      job now, so the band does not have to list them */
-  if(bad.length) warn.textContent =
-    `${bad.length} mandatory field${bad.length===1?'':'s'} missing`;
+  const missing = bad.filter(p=>p.kind==='req').length, wrong = bad.length - missing;
+  if(bad.length) warn.textContent = [
+    missing && `${missing} mandatory field${missing===1?'':'s'} missing`,
+    wrong   && `${wrong} field${wrong===1?'':'s'} in the wrong format`
+  ].filter(Boolean).join(' · ');
 
   /* the rail marks itself as fields are settled, without a full re-render that
      would take the caret out of whatever is being typed into */
@@ -10331,25 +10452,14 @@ $('#af-panel').addEventListener('input', e=>{
 $('#af-panel').addEventListener('change', e=>{
   const id = e.target.dataset.xf; if(!id) return;
   afDraft.values[id] = e.target.value;
+  afTouched.add(id);
   if(e.target.type==='date'){
     const disp = $(`#af-panel [data-xfd="${id}"]`);
     disp.textContent = e.target.value ? fmtDate(e.target.value) : disp.dataset.placeholder;
   }
-  /* the ship-to on a sales is one of our own locations, so naming it
-     answers the five fields under it — overwriting only what is still blank */
-  if(id==='consigneeName'){
-    const b = byId(MASTERS.branches, e.target.value);
-    if(b){
-      const fill = (k,v)=>{ if(!String(afDraft.values[k]??'').trim()) afDraft.values[k] = v; };
-      fill('consigneeAddress', b.address);
-      fill('consigneeState',   b.state);
-      fill('consigneeCountry', 'IN');
-      fill('consigneePincode', b.pin);
-      fill('consigneeGstin',   b.gstin);
-      fill('placeOfSupply',    b.state);
-      renderAfPanel();
-      return;
-    }
+  if(id==='consigneeName' && fillConsignee(afDraft.values, e.target.value)){
+    renderAfPanel();
+    return;
   }
   afCheck();
 });
@@ -10759,7 +10869,7 @@ function boot(){
     bridge must stop writing snapshots most of all: it would keep pushing the
     previous invoice's form onto whichever item is open now. */
  const current = arLive;
- let context=null, sent='', readyForSnapshots=false;
+ let context=null, sent='', readyForSnapshots=false, checkpoint=null;
  const post=(type,payload)=>parent.postMessage({source:'aia-ar-v2',type,payload},location.origin);
  /* The invoice's lines, as the inbox's flat `form.lines` — one row per thing
     billed, whichever table it is sitting in. Sales credits, so `cr` carries
@@ -10796,10 +10906,13 @@ function boot(){
     date:state.invoiceDate,
     due:state.dueDate,
     party,
-    costClass:state.costCentreClass,
-    costCentre:state.invoiceCostCentre,
+    costClass:ccFormValue('class'),
+    costCentre:ccFormValue('centre'),
     narration:state.narration,
-    lines:snapLines()
+    lines:snapLines(),
+    /* The optional groups' values, by field id — the record shows them and
+       an imported invoice is reopened from them. */
+    ...(Object.keys(state.extra||{}).length?{extra:{...state.extra}}:{})
    },
    amount:calc.grand};
   const key=JSON.stringify(payload);if(key!==sent){sent=key;post('snapshot',payload);}
@@ -10811,7 +10924,7 @@ function boot(){
    if(context.sheet){for(const d of context.sheet.__drafted||[]){const list=NM_LIST[d.kind]?.();if(list&&d.master&&!list.some(x=>x.id===d.master.id))list.push(d.master);}state=JSON.parse(JSON.stringify(context.sheet));state.allocated=false;delete state.reverseCharge;if(state.voucherType==='sales-rcm')state.voucherType='sales';if(state.salesLedger==='led-sales-rcm')state.salesLedger='led-sales-local';refreshCustomerList();refreshItemsList();refreshSalesLedgerList();}
    else if(context.manual){state=freshState();state.document={name:context.fileName};state.voucherType='sales';state.voucherNo=context.form?.voucherNo||'';}
    else if(context.form){
-    state.voucherNo=context.form.voucherNo;state.invoiceDate=context.form.date;state.dueDate=context.form.due;state.costCentreClass=context.form.costClass;state.invoiceCostCentre=context.form.costCentre;
+    state.voucherNo=context.form.voucherNo;state.invoiceDate=context.form.date;state.dueDate=context.form.due;state.costCentreClass=ccRef(MASTERS.costCentreClasses,context.form.costClass);state.invoiceCostCentre=ccRef(MASTERS.costCentres,context.form.costCentre);if(state.costCentreClass)state.ccMode='class';
    }
    readyForSnapshots=true;render();snapshot();
   }
@@ -10850,13 +10963,55 @@ function boot(){
      listener above. */
   if(ev.source!==parent||ev.origin!==location.origin||ev.data?.source!=='aia-inbox-ar-v2')return;
   const {type,payload}=ev.data;
+  /* The record panel edits a posted invoice in place: Edit marks the state,
+     Cancel asks for it back where it stands — no reload, so the form can
+     turn back into the record without a flash. As the bills sheet does. */
+  if(type==='checkpoint'){ checkpoint=JSON.parse(JSON.stringify(state)); }
+  if(type==='restore'&&checkpoint){
+   state=JSON.parse(JSON.stringify(checkpoint)); state.allocated=false;
+   refreshCustomerList(); refreshItemsList(); refreshSalesLedgerList();
+   document.querySelectorAll('.inbox-edited').forEach(n=>n.remove());
+   render();
+  }
   if(type==='context'){
    context=payload;
+   /* Field Configuration belongs to the company, and the inbox holds it: the
+      Map Fields page edits the same setting. Take it over the defaults,
+      field by field, so a field this sheet knows and the inbox does not keeps
+      its default rather than vanishing. */
+   if(context.fieldConfig){
+    Object.keys(fieldConfig).forEach(gid=>{
+     const c=context.fieldConfig[gid]; if(!c) return;
+     fieldConfig[gid].on=!!c.on;
+     Object.keys(fieldConfig[gid].fields).forEach(fid=>{ if(fid in (c.fields||{})) fieldConfig[gid].fields[fid]=!!c.fields[fid]; });
+    });
+    render();
+   }
    MASTERS.branches.forEach(b=>{b.name=b.name.replace('Karbon Business',context.company);});
    $('[data-bind="branch"]').innerHTML=options(MASTERS.branches,'Select Location',state.branch);
    refreshCustomerList();
    const style=document.createElement('style');style.textContent='.inbox-edited{color:#8a5300;font-size:11px}';document.head.append(style);
   }
+ });
+ /* Saving Field Configuration here saves it for the company, so the inbox is
+    handed the result. Only from that dialog: the groups a document switches on
+    to receive what it carried are this invoice's business, not a setting. */
+ $('#fc-save')?.addEventListener('click',()=>{ if(current()) post('fieldConfig',JSON.parse(JSON.stringify(fieldConfig))); });
+ /* An invoice created from a spreadsheet has no document to seed from, so it
+    opens blank — but it carries the optional fields the upload mapped, and
+    those are put back, each group switched on to show them. Registered after
+    the embed block's own `blank` handler, so it lands on the fresh state. */
+ addEventListener('message',ev=>{
+  if(!current()||ev.source!==parent||ev.origin!==location.origin) return;
+  if(ev.data?.source!=='aia-inbox-ar'||ev.data.type!=='blank') return;
+  const extra=context?.form?.extra; if(!extra) return;
+  Object.entries(extra).forEach(([id,val])=>{
+   const g=FIELD_GROUPS.find(x=>x.fields.some(f=>f.id===id)); if(!g) return;
+   fieldConfig[g.id].on=true; fieldConfig[g.id].fields[id]=true;
+   g.fields.filter(f=>f.req===id).forEach(f=>{ fieldConfig[g.id].fields[f.id]=true; });
+   state.extra[id]=val;
+  });
+  render();
  });
  document.addEventListener('change',ev=>{if(!current())return;post('edited',{field:ev.target.dataset.bind||'lines'});const field=ev.target.closest('.field');if(field&&!field.querySelector('.inbox-edited')){const tag=document.createElement('span');tag.className='inbox-edited';tag.textContent='Edited by you';field.append(tag);}setTimeout(snapshot,0);});
 })();

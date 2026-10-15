@@ -70,7 +70,35 @@ export type BillItem = {
   desc: string;
   ledger: string;
   amount: number;
+  /**
+   * The stock item this line was booked against. Present only on an
+   * item-mode line; a ledger-mode charge has no master and no godown.
+   */
+  item?: string;
+  godown?: string;
+  /** Percent off the line, as the voucher recorded it. */
+  discount?: number;
+  costCentre?: string;
+  /**
+   * A split across cost centres, when the line is not booked to one. Each
+   * category's shares add to 100% of the line; `costCentre` is then unset.
+   */
+  allocations?: CostAllocation[];
 } & PrintedLine;
+
+/** One share of a line, booked to a cost centre under a cost category. */
+export type CostAllocation = {
+  category: string;
+  centre: string;
+  percent: number;
+  amount: number;
+};
+
+/** One ledger posting under a tax or adjustment head — TDS, rounding, RCM. */
+export type BillLedgerPosting = {
+  ledger: string;
+  amount: number;
+};
 
 /**
  * What the document itself printed against a line, when it printed it. A tax
@@ -98,10 +126,31 @@ export type InboxBill = {
   dueDate: string;
   gstReg: string;
   costCentre: string | null;
+  /**
+   * A cost centre class set at the header, by name. Like a header cost
+   * centre it covers every line; the two are never set together.
+   */
+  costCentreClass?: string;
   /** Field names the classifier is unsure about — the UI marks these for review. */
   flagged: string[];
   items: BillItem[];
   taxes: BillTaxes;
+  /**
+   * The GST block by ledger, when the bill carries more than one rate — say
+   * CGST @9% and CGST @6%. When present it replaces the heads in `taxes`.
+   */
+  taxLedgers?: BillLedgerPosting[];
+  /** The purchase ledger the item-mode lines post to, when there are any. */
+  purchaseLedger?: string;
+  /** Tax deducted at source, by section ledger. Reduces what is payable. */
+  tds?: BillLedgerPosting[];
+  /** Rounding off and the like. Signed; added to the payable. */
+  adjustments?: BillLedgerPosting[];
+  /**
+   * GST payable by us under reverse charge. Stated for the record; it is not
+   * part of what the vendor is owed, so it sits outside the grand total.
+   */
+  rcm?: BillLedgerPosting;
   subTotal: number;
   grandTotal: number;
   /** Vendor is not in masters yet; confirming will propose creating it. */

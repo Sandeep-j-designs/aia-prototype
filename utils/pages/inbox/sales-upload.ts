@@ -1,5 +1,14 @@
 import type { PillTone } from "@/components/inbox/v2/ui";
 import {
+  ADDITIONAL_LABELS,
+  additionalField,
+  fieldConfigDefaults,
+  isAdditionalKey,
+  isLive,
+  resolveChoice,
+  type FieldConfig,
+} from "@/config/pages/inbox/additional-fields";
+import {
   AR_IMPORT_ALLOWED_FILE_EXTENSIONS,
   OPENABLE_AR_IMPORT_BATCH_STATUSES,
   mappingFieldGroups,
@@ -88,16 +97,73 @@ export const selectField = (
   return next;
 };
 
-export const missingRequiredFieldLabels = (
-  mode: VoucherViewMode,
+const mapped = (mappings: FieldMappings, key: ARBulkUploadFieldKey) =>
+  !!mappings[key]?.sourceColumns.length;
+
+/** Required outright, or required because the field it hangs off is mapped. */
+export const isRequiredNow = (
+  field: { required?: boolean; requiredWhen?: ARBulkUploadFieldKey },
   mappings: FieldMappings
 ) =>
-  mappingFieldGroups(mode)
+  !!field.required ||
+  (!!field.requiredWhen && mapped(mappings, field.requiredWhen));
+
+export const missingRequiredFieldLabels = (
+  mode: VoucherViewMode,
+  mappings: FieldMappings,
+  config: FieldConfig = fieldConfigDefaults()
+) =>
+  mappingFieldGroups(mode, config)
     .flatMap((group) => group.fields)
     .filter(
-      (field) => field.required && !mappings[field.key]?.sourceColumns.length
+      (field) => isRequiredNow(field, mappings) && !mapped(mappings, field.key)
     )
     .map((field) => field.label);
+
+/**
+ * PROTOTYPE: a mapping held to what the configuration offers. A field
+ * switched off stops being part of the invoice, so its column goes back to
+ * unmapped rather than feeding something nobody can see.
+ */
+export const pruneMappings = (
+  mappings: FieldMappings,
+  config: FieldConfig
+): FieldMappings =>
+  Object.fromEntries(
+    Object.entries(mappings).filter(
+      ([key]) => !isAdditionalKey(key) || isLive(config, key)
+    )
+  ) as FieldMappings;
+
+/**
+ * PROTOTYPE: the backend's suggestion for fields a configuration change has
+ * just made available — taken only where the field and its column are both
+ * still free, so nothing the accountant chose is moved.
+ */
+export const withSuggestions = (
+  mappings: FieldMappings,
+  suggestion: FieldMappings,
+  config: FieldConfig
+): FieldMappings => {
+  const taken = new Set(
+    Object.values(mappings).flatMap((m) => m?.sourceColumns ?? [])
+  );
+  const next = { ...mappings };
+  (Object.keys(suggestion) as ARBulkUploadFieldKey[]).forEach((key) => {
+    const columns = suggestion[key]?.sourceColumns ?? [];
+    if (
+      isAdditionalKey(key) &&
+      isLive(config, key) &&
+      !mapped(next, key) &&
+      columns.length &&
+      columns.every((c) => !taken.has(c))
+    ) {
+      next[key] = { sourceColumns: columns };
+      columns.forEach((c) => taken.add(c));
+    }
+  });
+  return next;
+};
 
 /** Production: getSuggestedTemplateName. */
 export const getSuggestedTemplateName = (current: string | null) =>
@@ -211,6 +277,49 @@ export const validatePreviewPayload = (
       severity: "warning",
       message: "hsn_sac must be a 4, 6, or 8 digit code.",
     });
+  return [...issues, ...validateAdditional(payload)];
+};
+
+/**
+ * PROTOTYPE: the sales invoice's own rules for its optional fields, applied
+ * to the ones this upload mapped — the conditional pairs, the formats the
+ * portal insists on, and list values the invoice has no entry for.
+ */
+export const validateAdditional = (payload: PreviewPayload): PreviewIssue[] => {
+  const issues: PreviewIssue[] = [];
+  Object.keys(payload)
+    .filter(isAdditionalKey)
+    .forEach((key) => {
+      const field = additionalField(key)!;
+      const value = String(payload[key] ?? "").trim();
+      if (!value) {
+        if (field.req && !blank(payload[field.req]))
+          issues.push({
+            group: "missing_data",
+            code: "missing_required_field",
+            field: key,
+            severity: "error",
+            message: `${field.label} is required once ${ADDITIONAL_LABELS[field.req]} is filled.`,
+          });
+        return;
+      }
+      if (field.fmt && !field.fmt.test(value))
+        issues.push({
+          group: "format",
+          code: "invalid_format",
+          field: key,
+          severity: "error",
+          message: field.fmt.message,
+        });
+      if (field.type === "choice" && !resolveChoice(field, value))
+        issues.push({
+          group: "format",
+          code: "unknown_value",
+          field: key,
+          severity: "warning",
+          message: `'${value}' is not in the ${field.label} list. It will be left blank on the invoice.`,
+        });
+    });
   return issues;
 };
 
@@ -312,6 +421,18 @@ export const buildPreviewRows = ({
       narration: get("narration") ?? "",
       gst_registration: gstRegistration,
     };
+    /* Whatever optional fields this upload mapped, as the sheet wrote them.
+       Dates come in as the sheet's dd/mm/yyyy, like the invoice date. A
+       mapped Place of Supply overrides the customer master's state. */
+    (Object.keys(mappings) as ARBulkUploadFieldKey[])
+      .filter(isAdditionalKey)
+      .forEach((key) => {
+        const value = get(key);
+        const field = additionalField(key)!;
+        if (key === "place_of_supply" && blank(value)) return;
+        payload[key] =
+          field.type === "date" ? isoDate(value) : String(value ?? "").trim();
+      });
     const ref = get("reference_number");
     const row: ResponseARVoucherImportPreviewRow = {
       importRowUuid: `${batchId}-row-${n + 1}`,
@@ -351,6 +472,13 @@ export const editPreviewRow = (
 ): ResponseARVoucherImportPreviewRow => {
   const finalPayload: PreviewPayload = { ...row.finalPayload, [field]: value };
   let issues = row.issuePayload.filter((issue) => issue.field !== field);
+  /* An optional field can satisfy, or newly owe, its pair — so its rules are
+     worked out again over the row rather than just cleared. */
+  if (isAdditionalKey(field))
+    issues = [
+      ...issues.filter((i) => !i.field || !isAdditionalKey(i.field)),
+      ...validateAdditional(finalPayload),
+    ];
   if (field === "customer_name") {
     const master = findMaster(masters, value);
     if (master) {

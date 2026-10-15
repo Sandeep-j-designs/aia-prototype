@@ -55,6 +55,10 @@ import {
 } from "@/components/ui/table";
 import BulkActionBar from "@/components/common/bulk-action-bar";
 import {
+  ADDITIONAL_LABELS,
+  isAdditionalKey,
+} from "@/config/pages/inbox/additional-fields";
+import {
   DEFAULT_PREVIEW_ROW_STATUS_FILTER,
   FIXED_PREVIEW_COLUMN_KEY_SET,
   PREVIEW_AMOUNT_COLUMNS,
@@ -63,6 +67,7 @@ import {
   PREVIEW_LOCKED_FIELDS,
   PREVIEW_NUMBER_COLUMNS,
   PREVIEW_ROW_STATUS_OPTIONS,
+  additionalPreviewColumns,
 } from "@/config/pages/inbox/sales-upload";
 import { useColumnResize } from "@/hooks/pages/inbox/use-column-resize";
 import {
@@ -115,9 +120,10 @@ const FILTERABLE = new Set<PreviewColumnKey>(["customer_name", "row_status"]);
 const LEFT_PINNED = PREVIEW_COLUMNS.filter((c) => c.pinned === "left").map(
   (c) => c.key
 );
-const LABEL = Object.fromEntries(
-  PREVIEW_COLUMNS.map((c) => [c.key, c.label])
-) as Record<PreviewColumnKey, string>;
+const LABEL = {
+  ...ADDITIONAL_LABELS,
+  ...Object.fromEntries(PREVIEW_COLUMNS.map((c) => [c.key, c.label])),
+} as Record<PreviewColumnKey, string>;
 const STATUS_OPTIONS: FilterOption[] = PREVIEW_ROW_STATUS_OPTIONS.map((o) => ({
   value: o.value,
   label: o.label,
@@ -142,13 +148,26 @@ const formatDate = (value: unknown) => {
 const PreviewPage = ({ entry, onEditMapping, onExit, notify }: Props) => {
   const { batch, rows } = entry;
   const id = batch.importBatchUuid;
+  /* Production's columns, then whatever optional fields this upload mapped,
+     then Status — still pinned last. */
+  const columns = useMemo(() => {
+    const extra = additionalPreviewColumns(
+      Object.keys(entry.fieldMappings).filter(isAdditionalKey)
+    );
+    const status = PREVIEW_COLUMNS.filter((c) => c.key === "row_status");
+    return [
+      ...PREVIEW_COLUMNS.filter((c) => c.key !== "row_status"),
+      ...extra,
+      ...status,
+    ];
+  }, [entry.fieldMappings]);
   const [search, setSearch] = useState("");
   const [statuses, setStatuses] = useState<string[]>(
     DEFAULT_PREVIEW_ROW_STATUS_FILTER
   );
   const [customers, setCustomers] = useState<string[]>([]);
   const [visible, setVisible] = useState<PreviewColumnKey[]>(
-    PREVIEW_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key)
+    columns.filter((c) => c.defaultVisible).map((c) => c.key)
   );
   const [sort, setSort] = useState<{
     key: PreviewColumnKey;
@@ -166,9 +185,9 @@ const PreviewPage = ({ entry, onEditMapping, onExit, notify }: Props) => {
   const [deleteIds, setDeleteIds] = useState<string[] | null>(null);
 
   const complete = batch.status === ARVoucherImportBatchStatus.COMPLETE;
-  const shown = PREVIEW_COLUMNS.map((c) => c.key).filter((key) =>
-    visible.includes(key)
-  );
+  const shown = columns
+    .map((c) => c.key)
+    .filter((key) => visible.includes(key));
 
   const customerOptions: FilterOption[] = useMemo(
     () =>
@@ -663,7 +682,7 @@ const PreviewPage = ({ entry, onEditMapping, onExit, notify }: Props) => {
               Show columns
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {PREVIEW_COLUMNS.map((column) => (
+            {columns.map((column) => (
               <DropdownMenuCheckboxItem
                 key={column.key}
                 checked={visible.includes(column.key)}

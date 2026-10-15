@@ -12,6 +12,8 @@
  * files; nothing here is shaped differently from them.
  */
 
+import type { AdditionalFieldKey } from "@/config/pages/inbox/additional-fields";
+
 /** Production: VoucherViewMode in config/pages/accounts-payable/tally. */
 export enum VoucherViewMode {
   ITEM_MODE = "item_mode",
@@ -67,7 +69,11 @@ export type ARBulkUploadFieldKey =
   | "uom"
   | "unit_rate"
   | "discount"
-  | "item_amount";
+  | "item_amount"
+  /* PROTOTYPE: the sales invoice's optional groups, mappable when the
+     company's Field Configuration has them on. Not in production yet — see
+     config/pages/inbox/additional-fields. */
+  | AdditionalFieldKey;
 
 export interface FieldMappingConfig {
   sourceColumns: string[];
@@ -77,6 +83,8 @@ export interface MappingFieldSchema {
   key: ARBulkUploadFieldKey;
   label: string;
   required?: boolean;
+  /** PROTOTYPE: mandatory once this other field is mapped. */
+  requiredWhen?: ARBulkUploadFieldKey;
 }
 
 export interface MappingFieldGroupSchema {

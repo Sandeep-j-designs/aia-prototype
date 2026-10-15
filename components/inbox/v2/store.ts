@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import {
   MOCK_INBOX_ITEMS,
   SAHYADRI_FIRST_BILL,
+  COMPLEX_POSTED_BILL,
 } from "@/config/pages/inbox/mock-inbox";
 import type { InboxItem } from "@/types/pages/inbox";
 import type { UserCompany } from "@/types/pages/organisation";
@@ -112,6 +113,12 @@ export type Form = {
     /** The journal's Allocation column — a cost centre name, or "". */
     costCentre: string;
   }[];
+  /**
+   * A sales invoice's optional fields (Consignee, Order, E-Way Bill…), keyed
+   * by the AR sheet's field ids — see config/pages/inbox/additional-fields.
+   * Only what was filled; absent on everything else.
+   */
+  extra?: Record<string, string>;
 };
 export type Item = {
   id: string;
@@ -371,9 +378,18 @@ function seed(): State {
     // so both sides read their own tax block. Neither is recomputed here: the
     // figures come off the document, and the totals panel says so.
     const taxBlock = b?.taxes || inv?.taxes;
-    const taxes = taxBlock
-      ? Object.values(taxBlock).reduce((s, v) => s + (v || 0), 0)
-      : 0;
+    const taxes = b?.taxLedgers
+      ? b.taxLedgers.reduce((s, l) => s + l.amount, 0)
+      : taxBlock
+        ? Object.values(taxBlock).reduce((s, v) => s + (v || 0), 0)
+        : 0;
+    // TDS comes off what is payable; rounding goes on. RCM is our own
+    // liability, not the vendor's dues, so it stays out of the amount.
+    const tds = (b?.tds || []).reduce((s, l) => s + l.amount, 0);
+    const adjustments = (b?.adjustments || []).reduce(
+      (s, l) => s + l.amount,
+      0
+    );
     const f: Form = {
       gst: "Karnataka HQ",
       voucherType:
@@ -396,21 +412,14 @@ function seed(): State {
           : x.vendor && x.vendor !== "—"
             ? x.vendor
             : x.customer || "General counterparty",
-      costClass: "",
+      costClass: b?.costCentreClass || "",
       costCentre: b?.costCentre || inv?.costCentre || "",
-      costClassEnabled: false,
+      costClassEnabled: !!b?.costCentreClass,
       narration: x.jv?.narration || x.source.subject || "",
       lines,
     };
-    /*
-      Nothing arrives Approved.
-
-      The mock set marks three documents `done`, which read as vouchers already
-      posted — on a queue nobody has worked yet, from an upload that has just
-      finished. Approved is the state this dataset reaches by someone pressing
-      Approve & Next, so those three land where every other document does, and
-      the Approved tab opens empty until the queue has been worked.
-    */
+    // Upload templates start unapproved. The default demo scenario adds a
+    // small set of posted examples separately, in seedFor().
     const status: Status =
       x.status === "deleted"
         ? "Deleted"
@@ -446,7 +455,9 @@ function seed(): State {
       received: x.receivedAt,
       form: f,
       amount:
-        route === "JV" ? lines.reduce((s, l) => s + l.dr, 0) : net + taxes,
+        route === "JV"
+          ? lines.reduce((s, l) => s + l.dr, 0)
+          : Math.round((net + taxes - tds + adjustments) * 100) / 100,
       original: x,
       edited: [],
       hardRef: x.status === "duplicate-hard" ? "POSTED-2041" : undefined,
@@ -483,8 +494,7 @@ function seed(): State {
             },
           }
         : {}),
-      // No seeded document is Approved, so none arrives with an approval
-      // snapshot or an approver on it — those are written by approving.
+      // Approval snapshots are added by the demo scenario or by approving.
     };
   };
   const items: Item[] = MOCK_INBOX_ITEMS.filter(
@@ -509,6 +519,18 @@ function seed(): State {
       doneAt: new Date().toISOString(),
       doneBy: actor,
     });
+  // A dense posted bill, listed with the Approved records, for checking the
+  // approved page at full complexity. It is on the books, so neither demo
+  // scenario treats it as an arrival.
+  // DEV: prototype-only fixture; delete on transplant.
+  const dense = fromMock(COMPLEX_POSTED_BILL, items.length);
+  items.push({
+    ...dense,
+    status: "Approved",
+    snapshot: structuredClone(dense.form),
+    doneAt: new Date().toISOString(),
+    doneBy: actor,
+  });
   // Sahyadri's first document is its own supplier's bill, read the same way.
   const acme = fromMock(SAHYADRI_FIRST_BILL, items.length);
   acme.company = "acme";
@@ -645,7 +667,32 @@ function withWhatsAppBacklog(base: State, company: string): State {
 /** A fresh prototype state, told as the given first-visit story. */
 function seedFor(scenario: Scenario): State {
   const base = { ...seed(), scenario };
-  if (scenario === "whatsapp") return withWhatsAppBacklog(base, base.waCompany);
+  if (scenario === "whatsapp") {
+    // Keep representative posted records ready to inspect on every refresh:
+    // an electricity bill, a supplier bill, a sales invoice and a journal.
+    const approvedExamples = new Set([
+      "INB-2048",
+      "INB-2052",
+      "INB-2031",
+      "INB-2046",
+    ]);
+    const doneAt = new Date().toISOString();
+    base.items = base.items.map((item): Item =>
+      approvedExamples.has(item.id)
+        ? {
+            ...item,
+            status: "Approved",
+            snapshot: structuredClone(item.form),
+            arSnapshot: item.arSheet
+              ? structuredClone(item.arSheet)
+              : undefined,
+            doneBy: actor,
+            doneAt,
+          }
+        : item
+    );
+    return withWhatsAppBacklog(base, base.waCompany);
+  }
   // A new user has received nothing: the queue starts empty everywhere, and
   // only the books (posted vouchers) are there. The seeded queue lives on as
   // the templates `demoUploadDocuments` cuts batches from.
@@ -720,13 +767,9 @@ export function arTotals(sheet: ArInvoiceState) {
   return { subTotal, discount, tax, grandTotal: r2(subTotal + tax) };
 }
 /**
- * Every page load starts the prototype over, on the empty state.
- *
- * This is a demo, and the thing being demonstrated is the arc: an Inbox with
- * nothing in it, documents arriving, extraction, review, approval. A restored
- * session skips the first beat and drops whoever is watching into the middle
- * of someone else's run — so refresh is the reset, and the way back to the
- * opening screen is the one every audience already knows.
+ * Every page load resets the prototype to its selected demo scenario.
+ * The default includes an incoming backlog and approved examples; the new
+ * user scenario starts with an empty inbox.
  *
  * The stored session is cleared rather than ignored, so a refresh genuinely
  * leaves nothing behind. `persist` still writes, and is still what surfaces a
@@ -1590,9 +1633,8 @@ export function updatePosted(
  *
  * Nothing that arrives this way is Approved. The batch is what a first upload
  * puts in front of someone who has approved nothing yet, so an Approved
- * document in it would be a voucher they never posted — and the Approved tab
- * would open with rows in it before the queue had been touched. Approved is a
- * state this dataset reaches by being worked, not by being seeded.
+ * document in it would be a voucher they never posted. The default scenario's
+ * approved examples are separate from these newly uploaded documents.
  */
 const seedable = (item: Item) =>
   item.status !== "Deleted" && item.status !== "Approved";
@@ -1895,6 +1937,8 @@ export type ImportedInvoice = {
   taxes: { ledger: string; amount: number }[];
   /** The upload it came from, for the record's subject line. */
   fileName: string;
+  /** Mapped optional fields, by AR sheet field id. */
+  extra?: Record<string, string>;
 };
 
 /**
@@ -1950,6 +1994,9 @@ export function createImportedInvoices(
       party: invoice.customerName,
       costCentre: invoice.costCentre,
       lines: deriveLines(arSheet),
+      ...(invoice.extra && Object.keys(invoice.extra).length
+        ? { extra: invoice.extra }
+        : {}),
     };
     return {
       ...structuredClone(template),

@@ -270,7 +270,20 @@ const SidebarLayout = ({
     query.addEventListener("change", sync);
     return () => query.removeEventListener("change", sync);
   }, []);
-  const collapsed = compact || desktopCollapsed;
+  /*
+    A screen can ask for the rail by passing `defaultSidebarState={false}` —
+    the Inbox's split view does, to make room for its record list. The ask
+    wins over the remembered state without overwriting it, so leaving that
+    screen brings the sidebar back the way the user had it. Toggling while
+    asked releases the ask for as long as the screen stays.
+  */
+  const [released, setReleased] = useState(false);
+  useEffect(() => setReleased(false), [defaultSidebarState]);
+  const asked =
+    !released && defaultSidebarState !== undefined
+      ? !defaultSidebarState
+      : undefined;
+  const collapsed = compact || (asked ?? desktopCollapsed);
 
   // Production persists this in the `sidebar_state` cookie and reads it during
   // render. sessionStorage in an effect keeps the server and client markup
@@ -398,7 +411,12 @@ const SidebarLayout = ({
           <div className="hidden md:block">
             <button
               type="button"
-              onClick={() => setCollapsed((v) => !v)}
+              onClick={() => {
+                if (asked !== undefined) {
+                  setReleased(true);
+                  setCollapsed(!asked);
+                } else setCollapsed((v) => !v);
+              }}
               title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
               aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
               aria-expanded={!collapsed}

@@ -1,0 +1,295 @@
+/*
+  The approved voucher, after Mercury's record: a large, light title with its
+  status beside it; every fact once in a two-column grid, label above value; then the
+  lines, the summary, the document and the narration, each under a plain
+  label, the tables in hairline-bordered boxes.
+
+  Type: 28 for the title, 15 for values, 14 for table cells, 13 for labels.
+  Colour comes from tokens only.
+*/
+
+/* The full-width page (a record not opened from a table): the same sheet on
+   the same grey ground the docked panel uses. */
+.workspace {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  background: hsl(var(--section));
+  scrollbar-gutter: stable;
+}
+.layout {
+  max-width: 1080px;
+  margin: auto;
+  padding: 24px 24px 48px;
+}
+.content {
+  min-width: 0;
+  padding: 32px;
+  border: 1px solid hsl(var(--neutral-gray));
+  border-radius: 12px;
+  background: hsl(var(--background));
+}
+
+.record {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  color: hsl(var(--foreground));
+}
+.muted {
+  color: hsl(var(--secondary-foreground));
+}
+
+/* ------------------------------------------------------------------ header */
+
+/* The title and its status share a baseline, flush left. */
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.title {
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 36px;
+  letter-spacing: -0.4px;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ fields */
+
+/* The rule under the title ends the identity; the facts start below it. */
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 32px;
+  row-gap: 24px;
+  padding-top: 24px;
+  border-top: 1px solid hsl(var(--neutral-gray));
+}
+.field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.field dt,
+.blockLabel {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  color: hsl(var(--secondary-foreground));
+}
+.field dd {
+  min-width: 0;
+  font-size: 15px;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ blocks */
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.text {
+  font-size: 15px;
+  line-height: 22px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A bordered box that scrolls sideways when the panel is narrower than the
+   table — nine item columns do not fit half a screen. */
+.tableScroll {
+  overflow-x: auto;
+  border: 1px solid hsl(var(--neutral-gray));
+  border-radius: 8px;
+}
+.tableScroll table {
+  border-collapse: collapse;
+}
+.tableScroll th,
+.tableScroll td {
+  border-bottom: 1px solid hsl(var(--neutral-gray));
+}
+.tableScroll th + th,
+.tableScroll td + td,
+.tableScroll th + td {
+  border-left: 1px solid hsl(var(--neutral-gray));
+}
+.tableScroll thead th {
+  white-space: nowrap;
+}
+.tableScroll tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.tableScroll tbody th {
+  font-weight: 400;
+  text-align: left;
+}
+.tableScroll:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+
+/* Summary: heads at full strength, their ledgers indented and quieter, the
+   total on its own ground. */
+.groupHead th {
+  font-weight: 500;
+}
+.groupRow th {
+  padding-left: 32px;
+  color: hsl(var(--secondary-foreground));
+}
+.totalRow > * {
+  background: hsl(var(--section));
+  font-size: 15px;
+  font-weight: 600;
+}
+.totalRow th {
+  font-weight: 600;
+}
+.memoRow > * {
+  font-size: 13px;
+  color: hsl(var(--secondary-foreground));
+}
+
+/* A split cost centre: the bills screen's chip, read-only here. */
+.splitChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 8px;
+  border: 1px solid hsl(var(--input));
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+  color: hsl(var(--primary));
+}
+.splitChip:hover,
+.splitChip:focus-visible {
+  background: hsl(var(--accent));
+}
+.splitCard {
+  width: 300px;
+  padding: 14px 16px;
+}
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(var(--secondary-foreground));
+}
+.splitGroup + .splitGroup {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid hsl(var(--neutral-gray));
+}
+.splitGroup:first-of-type {
+  margin-top: 10px;
+}
+.splitCategory {
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.splitRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px 104px;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 20px;
+}
+.splitRow > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------- attachment */
+
+.file {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid hsl(var(--neutral-gray));
+  border-radius: 8px;
+  text-align: left;
+  font-size: 15px;
+  line-height: 22px;
+  color: hsl(var(--foreground));
+  transition: background-color 150ms ease-out;
+}
+.file:hover {
+  background: hsl(var(--section));
+}
+.file:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+.fileName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fileAction {
+  display: inline-flex;
+  color: hsl(var(--secondary-foreground));
+}
+.file:hover .fileAction {
+  color: hsl(var(--primary));
+}
+
+/* Narrow panes stack the facts. */
+@container (max-width: 520px) {
+  .fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.record {
+  container-type: inline-size;
+}
+
+/* ------------------------------------------------------- additional details */
+
+/* A sales invoice's optional groups, each under its own name, in the same
+   two-column grid as the voucher's facts. Groups are ruled apart the way the
+   facts are ruled from the title. */
+.extraGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.extraGroup + .extraGroup {
+  padding-top: 20px;
+  border-top: 1px solid hsl(var(--neutral-gray));
+}
+.groupLabel {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+}
+.extraFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 32px;
+  row-gap: 20px;
+}

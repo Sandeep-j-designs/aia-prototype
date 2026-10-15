@@ -36,6 +36,9 @@ type Line = {
   inter?: boolean;
   /** A total typed wrong in the source sheet. */
   totalOverride?: number;
+  /** The buyer's purchase order, where the customer quoted one. */
+  orderNo?: string;
+  orderDate?: string;
 };
 
 const ITEMS: Record<string, { name: string; hsn: string }> = {
@@ -74,23 +77,25 @@ const line = (
   awkward rows are deliberate — they are what the preview exists to catch:
   0417 and 0421 name customers the masters do not know, 0416 and 0428 are a
   registered customer with no GSTIN on file, 0420 and 0425 carry totals that
-  do not add up, and 0425 and 0430 have five-digit HSN codes.
+  do not add up, and 0425 and 0430 have five-digit HSN codes. The modern-trade
+  buyers quote a PO; 0418's came without its date, which only matters once
+  Order Details is switched on and the columns are mapped.
 */
 // prettier-ignore
 const LINES: Line[] = [
   line("01/09/2026", "0412", "Sri Lakshmi Traders", "29AAYFS1040D1Z2", "Karnataka", "sun", 40, 2150),
   line("02/09/2026", "0413", "Annapoorna Wholesale", "29AAFFA8764Y1Z3", "Karnataka", "gnut", 25, 2650),
   line("02/09/2026", "0413", "Annapoorna Wholesale", "29AAFFA8764Y1Z3", "Karnataka", "bran", 240, 145),
-  line("03/09/2026", "0414", "Reliance Retail Ltd", "27AATCR8983C1ZM", "Maharashtra", "sun", 120, 2100, { inter: true }),
+  line("03/09/2026", "0414", "Reliance Retail Ltd", "27AATCR8983C1ZM", "Maharashtra", "sun", 120, 2100, { inter: true, orderNo: "RRL/PO/55120", orderDate: "28/08/2026" }),
   line("04/09/2026", "0415", "Hotel Mayura Group", "29AAZCH6289B1ZT", "Karnataka", "palm", 30, 1720),
   line("05/09/2026", "0416", "Vijaya Provisions", "", "Karnataka", "mus", 60, 168),
   line("06/09/2026", "0417", "Sri Lakshmi Trader", "29AAYFS1040D1Z2", "Karnataka", "gnut", 20, 2650),
-  line("08/09/2026", "0418", "Spar Hypermarket", "29AAKCM9936L1ZI", "Karnataka", "bran", 480, 142),
-  line("09/09/2026", "0419", "Chennai Oil Depot", "33AAWFC7539W1Z4", "Tamil Nadu", "palm", 80, 1700, { inter: true }),
+  line("08/09/2026", "0418", "Spar Hypermarket", "29AAKCM9936L1ZI", "Karnataka", "bran", 480, 142, { orderNo: "SPAR/PO/7781" }),
+  line("09/09/2026", "0419", "Chennai Oil Depot", "33AAWFC7539W1Z4", "Tamil Nadu", "palm", 80, 1700, { inter: true, orderNo: "COD/0912", orderDate: "05/09/2026" }),
   line("10/09/2026", "0420", "Malabar Foods", "32AAVCM9572N1ZG", "Kerala", "sun", 50, 2150, { inter: true, totalOverride: 112785 }),
   line("11/09/2026", "0421", "Green Leaf Caterers", "29AAQFG5381H1ZU", "Karnataka", "gnut", 8, 2650),
   line("12/09/2026", "0422", "Hotel Mayura Group", "29AAZCH6289B1ZT", "Karnataka", "sun", 15, 2150),
-  line("13/09/2026", "0423", "Reliance Retail Ltd", "27AATCR8983C1ZM", "Maharashtra", "mus", 600, 160, { inter: true }),
+  line("13/09/2026", "0423", "Reliance Retail Ltd", "27AATCR8983C1ZM", "Maharashtra", "mus", 600, 160, { inter: true, orderNo: "RRL/PO/55871", orderDate: "09/09/2026" }),
   line("15/09/2026", "0424", "Annapoorna Wholesale", "29AAFFA8764Y1Z3", "Karnataka", "palm", 45, 1720),
   line("16/09/2026", "0425", "Spar Hypermarket", "29AAKCM9936L1ZI", "Karnataka", "sun", 60, 2125, { hsn: "15121", totalOverride: 135000 }),
   line("17/09/2026", "0426", "Sri Lakshmi Traders", "29AAYFS1040D1Z2", "Karnataka", "bran", 300, 145),
@@ -98,7 +103,7 @@ const LINES: Line[] = [
   line("19/09/2026", "0428", "Vijaya Provisions", "", "Karnataka", "sun", 10, 2150),
   line("22/09/2026", "0429", "Malabar Foods", "32AAVCM9572N1ZG", "Kerala", "bran", 200, 145, { inter: true }),
   line("23/09/2026", "0430", "Hotel Mayura Group", "29AAZCH6289B1ZT", "Karnataka", "gnut", 12, 2650, { hsn: "15081" }),
-  line("24/09/2026", "0431", "Reliance Retail Ltd", "27AATCR8983C1ZM", "Maharashtra", "palm", 150, 1690, { inter: true }),
+  line("24/09/2026", "0431", "Reliance Retail Ltd", "27AATCR8983C1ZM", "Maharashtra", "palm", 150, 1690, { inter: true, orderNo: "RRL/PO/56240", orderDate: "20/09/2026" }),
   line("25/09/2026", "0432", "Sri Lakshmi Traders", "29AAYFS1040D1Z2", "Karnataka", "mus", 90, 168),
   line("25/09/2026", "0432", "Sri Lakshmi Traders", "29AAYFS1040D1Z2", "Karnataka", "sun", 20, 2150),
   line("26/09/2026", "0433", "Spar Hypermarket", "29AAKCM9936L1ZI", "Karnataka", "gnut", 30, 2640),
@@ -122,6 +127,8 @@ export const SALES_UPLOAD_HEADER = [
   "SGST",
   "IGST",
   "Total",
+  "Buyer's Order No",
+  "Order Date",
 ];
 
 /**
@@ -159,6 +166,8 @@ export const SAMPLE_SALES_FILE: SampleSalesFile = {
       cgst,
       igst,
       total,
+      l.orderNo ?? "",
+      l.orderDate ?? "",
     ];
   }),
 };
@@ -188,14 +197,18 @@ export const sampleCsv = (mode: "item" | "accounting") => {
 /**
  * The backend's suggested mapping for the sample (`mappingPayload`). "Taxable
  * Value" is left unmatched on purpose — the AI was not sure it meant Item
- * Amount — so the required-fields banner has something to say. GSTIN and
- * Place of Supply are not mapping fields at all: production takes both from
- * the customer master.
+ * Amount — so the required-fields banner has something to say. GSTIN is not
+ * a mapping field: production takes it from the customer master.
+ *
+ * PROTOTYPE: Place of Supply maps to the Consignee group's field, which is on
+ * by default. The order columns are suggested too, but Order Details starts
+ * off, so they stay unmapped until it is switched on (see ADDITIONAL_SUGGESTION).
  */
 export const SUGGESTED_ITEM_MAPPING: FieldMappings = {
   invoice_date: { sourceColumns: ["Invoice Date"] },
   reference_number: { sourceColumns: ["Invoice No"] },
   customer_name: { sourceColumns: ["Customer"] },
+  place_of_supply: { sourceColumns: ["Place of Supply"] },
   item_name: { sourceColumns: ["Item"] },
   hsn_sac: { sourceColumns: ["HSN"] },
   quantity: { sourceColumns: ["Qty"] },
@@ -211,11 +224,22 @@ export const SUGGESTED_ACCOUNTING_MAPPING: FieldMappings = {
   invoice_date: { sourceColumns: ["Invoice Date"] },
   reference_number: { sourceColumns: ["Invoice No"] },
   customer_name: { sourceColumns: ["Customer"] },
+  place_of_supply: { sourceColumns: ["Place of Supply"] },
   ledger_description: { sourceColumns: ["Item"] },
   cgst_amount: { sourceColumns: ["CGST"] },
   sgst_amount: { sourceColumns: ["SGST"] },
   igst_amount: { sourceColumns: ["IGST"] },
   total_amount: { sourceColumns: ["Total"] },
+};
+
+/**
+ * PROTOTYPE: what the backend would also suggest for the sample, had the
+ * company its optional groups on. Applied when Field Configuration switches
+ * the group on, wherever the column is still free.
+ */
+export const ADDITIONAL_SUGGESTION: FieldMappings = {
+  order_no: { sourceColumns: ["Buyer's Order No"] },
+  order_date: { sourceColumns: ["Order Date"] },
 };
 
 /** A complete mapping — what a saved template, or a finished mapping, holds. */

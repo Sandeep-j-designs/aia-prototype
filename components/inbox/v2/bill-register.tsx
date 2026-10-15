@@ -225,6 +225,8 @@ type Props = {
   selected: string[];
   onSelectedChange: (ids: string[]) => void;
   onOpen: (item: Item) => void;
+  /** The row whose record is docked beside the table, lit while it is. */
+  activeId?: string;
   onDelete: (item: Item) => void;
   /** Says a thing is real in the app but not here. */
   onUnbuilt: (what: string) => void;
@@ -258,6 +260,7 @@ const BillRegister = ({
   selected,
   onSelectedChange,
   onOpen,
+  activeId,
   onDelete,
   onUnbuilt,
   search,
@@ -615,8 +618,8 @@ const BillRegister = ({
                 <span className="flex flex-col">
                   Split Purchases
                   <span className={T.sub}>
-                    One PDF with several purchases — we’ll split it for you
-                    to check.
+                    One PDF with several purchases — we’ll split it for you to
+                    check.
                   </span>
                 </span>
               </DropdownMenuItem>
@@ -1010,9 +1013,10 @@ const BillRegister = ({
               <TableBody role="rowgroup">
                 {pageRows.map((item, row) => {
                   const ticked = selected.includes(item.id);
+                  const lit = ticked || item.id === activeId;
                   // Sticky cells paint their own ground, or the columns
                   // scrolling under them show through.
-                  const ground = ticked ? "bg-accent" : "bg-background";
+                  const ground = lit ? "bg-accent" : "bg-background";
                   return (
                     <TableRow
                       key={item.id}
@@ -1020,9 +1024,10 @@ const BillRegister = ({
                       aria-rowindex={row + 2}
                       aria-selected={ticked}
                       onClick={() => onOpen(item)}
+                      aria-current={item.id === activeId ? "true" : undefined}
                       className={cn(
                         "cursor-pointer hover:bg-transparent",
-                        ticked && "bg-accent hover:bg-accent"
+                        lit && "bg-accent hover:bg-accent"
                       )}
                     >
                       <TableCell

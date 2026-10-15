@@ -132,7 +132,7 @@ const UploadedInvoicesTable = ({
   return (
     <>
       <div className="min-h-0 min-w-0 flex-1 overflow-auto border-t border-neutral-gray">
-        <Table className="border-separate border-spacing-0 [&_td]:border-b [&_td]:border-neutral-gray [&_th]:border-b [&_th]:border-neutral-gray">
+        <Table className="border-separate border-spacing-0 [&_td]:border-b [&_td]:border-r [&_td]:border-neutral-gray [&_td:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-neutral-gray [&_th:last-child]:border-r-0">
           <TableHeader className="sticky top-0 z-10 bg-accent">
             <TableRow className="hover:bg-transparent">
               <TableHead className={cn(head, "w-[38%] pl-6")}>

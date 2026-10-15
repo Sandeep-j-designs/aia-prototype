@@ -1,15 +1,26 @@
 import React from "react";
-import { Check, Copy, FileText, Lock, ShieldCheck } from "lucide-react";
+import { Check, Copy, Eye, FileText, Lock, Split } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+import {
+  AR_ADDITIONAL_GROUPS,
+  displayValue,
+} from "@/config/pages/inbox/additional-fields";
 import { cn } from "@/lib/utils";
-import { Item, routeNames } from "./store";
+import type { BillLedgerPosting, CostAllocation } from "@/types/pages/inbox";
+import { Item } from "./store";
+import { PageDialog } from "./ui";
+import Preview from "./preview";
+import s from "./record-details.module.css";
 
 const money = (value: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(
     value
   );
-/** What a payable reads as on the books: a credit against the vendor. */
-const credit = (value: number) => `${money(value)} Cr`;
 const date = (value: string) =>
   value && !Number.isNaN(Date.parse(value))
     ? new Date(value).toLocaleDateString("en-IN", {
@@ -18,6 +29,13 @@ const date = (value: string) =>
         year: "numeric",
       })
     : value || "—";
+/** Money with a typographic minus, so every negative reads the same way. */
+const signed = (value: number) =>
+  value < 0 ? `− ${money(Math.abs(value))}` : money(value);
+const quantity = (qty: number, unit?: string) =>
+  `${qty.toLocaleString("en-IN")}${unit ? ` ${unit}` : ""}`;
+const sum = (rows: { amount: number }[]) =>
+  rows.reduce((s, r) => s + r.amount, 0);
 
 export function RecordBanner({
   tone,
@@ -74,16 +92,256 @@ export function RecordBanner({
   );
 }
 
-function Detail({ label, value }: { label: string; value?: string }) {
+/* ----------------------------------------------------------------- pieces */
+
+/* The approved record reads top down: what it is, its facts in a two-column
+   grid, then its lines, its summary and its document, each under a plain
+   label. Tabular figures keep money aligned. */
+
+/** One fact: a quiet label above its value. */
+const Field = ({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) => (
+  <div className={s.field}>
+    <dt>{label}</dt>
+    <dd>{children}</dd>
+  </div>
+);
+
+/** A block under its own label — a table, the document, the narration. */
+const Block = ({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) => (
+  <section aria-label={label} className={s.block}>
+    <h2 className={s.blockLabel}>{label}</h2>
+    {children}
+  </section>
+);
+
+/* Matching cell insets keep headings and values clear of the table edges. */
+const th = "px-4 py-2.5 text-sm font-normal text-secondary-foreground";
+const td = "px-4 py-2.5 align-top text-sm leading-5 text-foreground";
+const num = "whitespace-nowrap text-right tabular-nums";
+
+/**
+ * One line of the voucher. Item lines (a stock movement) and ledger lines (a
+ * charge posted straight to an account) are two things in Tally, so they get
+ * two tables: the item table carries the stock columns, the ledger table only
+ * what a charge has. Both end on the same Amount edge.
+ */
+type Line = {
+  key: string;
+  description?: string;
+  /** The stock item on an item line; the ledger on a ledger line. */
+  name?: string;
+  hsn?: string;
+  godown?: string;
+  qty?: number;
+  unit?: string;
+  rate?: number;
+  discount?: number;
+  costCentre?: string;
+  allocations?: CostAllocation[];
+  amount: number;
+};
+
+const dash = <span className={s.muted}>—</span>;
+
+/**
+ * A line's cost centre. Only shown when the voucher has no header cost centre
+ * or class — a header one applies to every line, so the tables drop the
+ * column. One centre reads as its name. A split reads the way the bills
+ * screen shows it — a chip naming how many cost categories it spans — and
+ * hovering or focusing it opens the allocation: each category, then each
+ * centre's share and amount.
+ */
+const CostCell = ({ line }: { line: Line }) => {
+  const shares = line.allocations || [];
+  if (!shares.length) return line.costCentre ? <>{line.costCentre}</> : dash;
+  const categories = Array.from(new Set(shares.map((a) => a.category)));
+  const label =
+    categories.length === 1
+      ? `1 ${categories[0]}`
+      : `${categories.length} cost categories`;
   return (
-    <div className="min-w-0">
-      <dt className="text-xs text-secondary-foreground">{label}</dt>
-      <dd className="mt-1.5 break-words text-sm font-medium text-foreground">
-        {value || "—"}
-      </dd>
-    </div>
+    <HoverCard openDelay={100} closeDelay={80}>
+      <HoverCardTrigger asChild>
+        <button
+          type="button"
+          className={s.splitChip}
+          aria-label={`Split allocation: ${label}`}
+        >
+          <Split size={12} aria-hidden />
+          <span>{label}</span>
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent align="start" className={s.splitCard}>
+        <p className={s.label}>Split allocation</p>
+        {categories.map((category) => (
+          <div key={category} className={s.splitGroup}>
+            <p className={s.splitCategory}>{category}</p>
+            {shares
+              .filter((a) => a.category === category)
+              .map((a) => (
+                <div key={a.centre} className={s.splitRow}>
+                  <span>{a.centre}</span>
+                  <span className={num}>{a.percent}%</span>
+                  <span className={num}>{money(a.amount)}</span>
+                </div>
+              ))}
+          </div>
+        ))}
+      </HoverCardContent>
+    </HoverCard>
   );
-}
+};
+
+const TableShell = ({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) => (
+  <div
+    className={s.tableScroll}
+    tabIndex={0}
+    role="region"
+    aria-label={`${label}, scroll horizontally for all columns`}
+  >
+    <table className="w-full text-left">{children}</table>
+  </div>
+);
+
+type TableProps = {
+  lines: Line[];
+  /** False when a header cost centre or class covers every line. */
+  perLineCost: boolean;
+};
+
+const ItemsTable = ({ lines, perLineCost }: TableProps) => (
+  <TableShell label="Item lines">
+    <thead>
+      <tr>
+        <th className={th}>Item description</th>
+        <th className={th}>Item</th>
+        <th className={th}>HSN / SAC</th>
+        <th className={th}>Godown / Location</th>
+        <th className={cn(th, "text-right")}>Quantity</th>
+        <th className={cn(th, "text-right")}>Unit rate</th>
+        <th className={cn(th, "text-right")}>Discount</th>
+        {perLineCost && <th className={th}>Cost centre</th>}
+        <th className={cn(th, "text-right")}>Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {lines.map((line) => (
+        <tr key={line.key}>
+          <td className={td}>{line.description || dash}</td>
+          <td className={td}>{line.name || dash}</td>
+          <td className={td}>{line.hsn || dash}</td>
+          <td className={td}>{line.godown || dash}</td>
+          <td className={cn(td, num)}>
+            {line.qty != null ? quantity(line.qty, line.unit) : dash}
+          </td>
+          <td className={cn(td, num)}>
+            {line.rate != null ? money(line.rate) : dash}
+          </td>
+          <td className={cn(td, num)}>
+            {line.discount != null ? `${line.discount}%` : dash}
+          </td>
+          {perLineCost && (
+            <td className={td}>
+              <CostCell line={line} />
+            </td>
+          )}
+          <td className={cn(td, num)}>{signed(line.amount)}</td>
+        </tr>
+      ))}
+    </tbody>
+  </TableShell>
+);
+
+const LedgersTable = ({ lines, perLineCost }: TableProps) => (
+  <TableShell label="Ledger lines">
+    <thead>
+      <tr>
+        <th className={cn(th, "w-[36%]")}>Description</th>
+        <th className={cn(th, "w-[22%]")}>Ledger</th>
+        <th className={th}>HSN / SAC</th>
+        {perLineCost && <th className={th}>Cost centre</th>}
+        <th className={cn(th, "text-right")}>Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {lines.map((line) => (
+        <tr key={line.key}>
+          <td className={cn(td, "min-w-[200px]")}>
+            {line.description || dash}
+          </td>
+          <td className={cn(td, "min-w-[140px]")}>{line.name || dash}</td>
+          <td className={td}>{line.hsn || dash}</td>
+          {perLineCost && (
+            <td className={td}>
+              <CostCell line={line} />
+            </td>
+          )}
+          <td className={cn(td, num)}>{signed(line.amount)}</td>
+        </tr>
+      ))}
+    </tbody>
+  </TableShell>
+);
+
+/**
+ * A head of the summary — GST, TDS, Adjustments. Its name sits above its
+ * ledgers so a "TDS Current assets" adjustment can never pass for a TDS
+ * deduction. The head carries its own sum only when it has two or more
+ * ledgers; with one, the sum would just repeat the row under it.
+ */
+const SummaryGroup = ({
+  label,
+  rows,
+  minus,
+}: {
+  label: string;
+  rows: BillLedgerPosting[];
+  /** Deductions (TDS) read as subtractions, not as more to pay. */
+  minus?: boolean;
+}) => {
+  if (!rows.length) return null;
+  const show = (value: number) => signed(minus ? -value : value);
+  return (
+    <>
+      <tr className={s.groupHead}>
+        <th scope="row" className={td}>
+          {label}
+        </th>
+        <td className={cn(td, num)}>
+          {rows.length > 1 ? show(sum(rows)) : ""}
+        </td>
+      </tr>
+      {rows.map((row) => (
+        <tr key={row.ledger} className={s.groupRow}>
+          <th scope="row" className={td}>
+            {row.ledger}
+          </th>
+          <td className={cn(td, num)}>{show(row.amount)}</td>
+        </tr>
+      ))}
+    </>
+  );
+};
+
+/* ------------------------------------------------------------------- view */
 
 export function ApprovedDetails({
   item,
@@ -92,387 +350,315 @@ export function ApprovedDetails({
   item: Item;
   company: string;
 }) {
+  const [documentOpen, setDocumentOpen] = React.useState(false);
   const f = item.snapshot || item.form;
   const journal = item.route === "JV";
-  const ar = item.route === "AR" ? item.arSnapshot || item.arSheet : undefined;
-  const subtotal = f.lines.reduce((sum, line) => sum + line.amount, 0);
-  const adjustments = Math.round((item.amount - subtotal) * 100) / 100;
+  const receivable = item.route === "AR";
+  const bill = item.original?.bill;
+  const ar = receivable ? item.arSnapshot || item.arSheet : undefined;
+  // The purchase sheet retains both selections when its toggle changes.
+  // Its active mode decides which header allocation belongs on the record.
+  const costMode = item.route === "AP" ? item.sheet?.ccMode : undefined;
+  const usesCostClass =
+    costMode === "class" || costMode === "centre"
+      ? costMode === "class"
+      : f.costClassEnabled || !!f.costClass;
+
+  /*
+    The registration shows as the branch and its GSTIN, the way the bills
+    screen states it. The mock writes them as one string joined by " · ";
+    the form keeps only the branch name.
+  */
+  const [branch, gstin] = (bill?.gstReg || f.gst || "").split(" · ");
+
+  /*
+    A bill's lines come out of extraction flat; the ones booked against a
+    stock item are the item rows, and the rest are ledger rows. The posted
+    amounts and ledgers are the form's (they may have been edited on review);
+    what the document printed — quantity, rate, godown, split — is the
+    extraction's, matched by position.
+  */
+  const items: Line[] = [];
+  const ledgers: Line[] = [];
+  if (ar) {
+    ar.items
+      .filter((row) => row.amount || row.description || row.item)
+      .forEach((row) =>
+        items.push({
+          key: row.id,
+          description: row.description,
+          name: row.item,
+          godown: row.godown,
+          qty: row.quantity,
+          rate: row.unitRate,
+          discount: row.discount,
+          costCentre: row.costCentre,
+          amount: row.amount,
+        })
+      );
+    ar.ledgers
+      .filter((row) => row.amount || row.ledger)
+      .forEach((row) =>
+        ledgers.push({
+          key: row.id,
+          description: row.description,
+          name: row.ledger,
+          costCentre: row.costCentre,
+          amount: row.amount,
+        })
+      );
+  } else {
+    const printed = bill?.items.length === f.lines.length ? bill.items : [];
+    f.lines.forEach((line, index) => {
+      const p = printed[index];
+      const row: Line = {
+        key: String(index),
+        description: line.description,
+        name: p?.item || line.ledger,
+        hsn: p?.hsn,
+        godown: p?.godown,
+        qty: p?.qty,
+        unit: p?.unit,
+        rate: p?.rate,
+        discount: p?.discount,
+        costCentre: line.costCentre || p?.costCentre || undefined,
+        allocations: line.costCentre ? undefined : p?.allocations,
+        amount: line.amount,
+      };
+      (p?.item ? items : ledgers).push(row);
+    });
+  }
+  const subTotal = sum(items) + sum(ledgers);
+
   /*
     The tax block as it came off the document. Both sides of the invoice carry
     one — a bill's GST is input, a sales invoice's is output — and neither is
-    recomputed here; these are the figures the extraction read.
+    recomputed here. A bill at more than one rate states its GST by ledger.
   */
-  const taxes = item.original?.bill?.taxes || item.original?.invoice?.taxes;
-  const taxHeads = taxes
-    ? (
+  const taxSide = receivable ? "Output" : "Input";
+  const gst: BillLedgerPosting[] = ar
+    ? ar.taxes
+        .filter((row) => row.amount || row.ledger)
+        .map((row) => ({ ledger: row.ledger || "Tax", amount: row.amount }))
+    : bill?.taxLedgers ||
+      (
         [
-          ["CGST", taxes.cgst],
-          ["SGST", taxes.sgst],
-          ["IGST", taxes.igst],
+          ["CGST", bill?.taxes.cgst],
+          ["SGST", bill?.taxes.sgst],
+          ["IGST", bill?.taxes.igst],
         ] as const
-      ).filter(([, amount]) => !!amount)
-    : [];
-  const taxTotal = taxHeads.reduce((sum, [, amount]) => sum + (amount || 0), 0);
-  const taxSide = item.route === "AR" ? "Output" : "Input";
+      )
+        .filter(([, amount]) => !!amount)
+        .map(([head, amount]) => ({
+          ledger: `${taxSide} ${head}`,
+          amount: amount || 0,
+        }));
+  const tds = bill?.tds || [];
+  const adjustments = bill?.adjustments || [];
+  const rcm = bill?.rcm;
+  const grandTotal = item.amount;
   /*
-    Tally's bill-wise allocation. A purchase entered against a supplier invoice
-    it has not seen before opens a new reference under that invoice's number,
-    payable on the due date — one row, because one bill is what an inbox
-    document is. Part-payments and settled references would come from the
-    ledger, which this prototype does not carry.
+    Whatever the figures above do not explain. Zero on every bill this
+    prototype carries; it exists so an edited voucher whose lines no longer
+    add up to its total does not quietly hide the gap.
   */
-  const allocation =
-    item.route === "AP" && f.invoiceNo
-      ? {
-          refType: "New Ref",
-          refName: f.invoiceNo,
-          due: f.due,
-          amount: item.amount,
-        }
-      : undefined;
+  const unexplained =
+    Math.round(
+      (grandTotal - (subTotal + sum(gst) - sum(tds) + sum(adjustments))) * 100
+    ) / 100;
+
+  const postingLedger = ar ? ar.salesLedger : bill?.purchaseLedger;
+  const partyName = f.party || f.voucherType;
+  /*
+    A cost centre or class set at the header applies to the whole voucher —
+    the sheet locks every line to it — so whatever a line still holds
+    underneath is not what was booked. Only with the header blank does each
+    line carry its own.
+  */
+  const headerCostCentre = usesCostClass ? f.costClass : f.costCentre;
+  const perLineCost = !headerCostCentre;
+  const narration = f.narration && f.narration !== "—" ? f.narration : "";
+  /*
+    A sales invoice's optional groups — whatever it was given, from the sheet
+    or a spreadsheet upload — group by group in the invoice's order. Only
+    what is filled: an empty group on a record is a question nobody asked.
+  */
+  const extra = receivable ? f.extra || {} : {};
+  const extraGroups = AR_ADDITIONAL_GROUPS.map((g) => ({
+    ...g,
+    fields: g.fields.filter((field) => String(extra[field.id] ?? "").trim()),
+  })).filter((g) => g.fields.length);
+  const or = (value?: string) => value || dash;
+
+  /*
+    Mercury's record: the voucher number as the title with its status beside
+    it, then every fact once in a two-column grid. The lines follow in
+    bordered tables, the summary closes on the total, and the document and
+    narration come last. No approver: without an audit trail behind it, the
+    name would be a claim the record cannot back.
+  */
   return (
-    <article
-      aria-label="Approved voucher details"
-      className="min-w-0 space-y-5"
-    >
-      <section className="overflow-hidden rounded-xl border border-neutral-gray bg-background">
-        <header className="border-b border-neutral-gray p-6">
-          <div className="mb-5 flex items-center gap-2 text-xs font-medium text-secondary-foreground">
-            <FileText className="h-4 w-4" aria-hidden />
-            {routeNames[item.route]}
-            <span className="ml-auto rounded-md bg-accent px-2 py-1 text-primary">
-              {f.voucherType}
-            </span>
-          </div>
-          <div className="flex flex-wrap items-start justify-between gap-5">
-            <div>
-              <p className="mb-1 text-xs text-secondary-foreground">
-                Voucher {f.voucherNo}
-              </p>
-              <h1 className="text-2xl font-semibold tracking-tight">
-                {f.party || f.voucherType}
-              </h1>
-              <p className="mt-2 text-xs text-secondary-foreground">
-                {company}
-              </p>
-            </div>
-            <div className="sm:text-right">
-              <p className="text-xs text-secondary-foreground">
-                {journal ? "Total debit" : "Voucher total"}
-              </p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">
-                {money(
-                  journal ? f.lines.reduce((s, l) => s + l.dr, 0) : item.amount
-                )}
-              </p>
-              <p className="mt-1 text-[11px] text-secondary-foreground">
-                INR · Indian Rupee
-              </p>
-            </div>
-          </div>
-        </header>
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-6 p-6 xl:grid-cols-3">
-          <Detail
-            label={
-              journal
-                ? "Voucher date"
-                : item.route === "AR"
-                  ? "Invoice date"
-                  : "Bill date"
-            }
-            value={date(f.date)}
-          />
-          <Detail
-            label={
-              journal
-                ? "Reference number"
-                : item.route === "AR"
-                  ? "Invoice number"
-                  : "Supplier invoice"
-            }
-            value={f.invoiceNo}
-          />
-          <Detail
-            label={journal ? "Reference date" : "Due date"}
-            value={date(f.due)}
-          />
-          <Detail label="GST registration" value={f.gst} />
-          <Detail label="Cost centre" value={f.costCentre} />
-          <Detail label="Cost centre class" value={f.costClass} />
-          {/* The document this voucher was read off, named the way the bills
-              screen names it. */}
-          <Detail label="Bill document" value={item.file?.name} />
-          {/*
-            Nothing has been paid against a voucher the moment it posts, so the
-            outstanding balance is the whole of it. Part-payments live in the
-            ledger, which this prototype does not read.
-          */}
-          {!journal && (
-            <Detail label="Outstanding amount" value={credit(item.amount)} />
-          )}
-        </dl>
-      </section>
-      <section className="overflow-hidden rounded-xl border border-neutral-gray bg-background">
-        <div className="flex items-center justify-between px-6 py-4">
-          <h2 className="text-sm font-semibold">
-            {journal ? "Journal entries" : "Line items"}
-          </h2>
-          <span className="text-xs text-secondary-foreground">
-            {f.lines.length} {f.lines.length === 1 ? "entry" : "entries"}
-          </span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="border-y border-neutral-gray bg-accent/40 text-xs text-secondary-foreground">
-              <tr>
-                {/* Description and ledger are two columns, as on the bills
-                    screen — a line's own wording and the account it lands in
-                    are different facts, and stacking them read as one. */}
-                <th className="px-6 py-3 font-medium">Description</th>
-                <th className="px-4 py-3 font-medium">
-                  {journal ? "Ledger" : "Ledger name"}
-                </th>
-                <th className="px-4 py-3 font-medium">Cost centre</th>
-                <th className="px-6 py-3 text-right font-medium">
-                  {journal ? "Debit" : "Amount"}
-                </th>
-                {journal && (
-                  <th className="px-6 py-3 text-right font-medium">Credit</th>
-                )}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-gray">
-              {f.lines.map((line, index) => (
-                <tr key={index}>
-                  <td className="px-6 py-4">{line.description || "—"}</td>
-                  <td className="px-4 py-4 font-medium">
-                    {line.ledger || "—"}
-                  </td>
-                  <td className="px-4 py-4 text-xs text-secondary-foreground">
-                    {line.costCentre || "—"}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-right tabular-nums">
-                    {money(journal ? line.dr : line.amount)}
-                  </td>
-                  {journal && (
-                    <td className="whitespace-nowrap px-6 py-4 text-right tabular-nums">
-                      {money(line.cr)}
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-            <tfoot className="border-t border-neutral-gray bg-accent/40">
-              {!journal && (adjustments !== 0 || taxHeads.length > 0) && (
-                <>
-                  <tr>
-                    <th
-                      colSpan={3}
-                      className="px-6 pt-4 text-xs font-normal text-secondary-foreground"
-                    >
-                      Sub total
-                    </th>
-                    <td className="px-6 pt-4 text-right text-xs tabular-nums">
-                      {money(subtotal)}
-                    </td>
-                  </tr>
-                  {/*
-                    GST by head, as the bills screen states it. It used to be a
-                    single "Taxes & adjustments" figure, which is the one line
-                    of a bill an accountant checks head by head.
-                  */}
-                  {taxHeads.length > 0 ? (
-                    <>
-                      <tr>
-                        <th
-                          colSpan={3}
-                          className="px-6 pt-3 text-xs font-medium"
-                        >
-                          GST
-                        </th>
-                        <td className="px-6 pt-3 text-right text-xs font-medium tabular-nums">
-                          {money(taxTotal)}
-                        </td>
-                      </tr>
-                      {taxHeads.map(([head, amount]) => (
-                        <tr key={head}>
-                          <th
-                            colSpan={3}
-                            className="px-6 pl-10 pt-2 text-left text-xs font-normal text-secondary-foreground"
-                          >
-                            {taxSide} {head}
-                          </th>
-                          <td className="px-6 pt-2 text-right text-xs tabular-nums text-secondary-foreground">
-                            {money(amount || 0)}
-                          </td>
-                        </tr>
-                      ))}
-                    </>
-                  ) : (
-                    <tr>
-                      <th
-                        colSpan={3}
-                        className="px-6 pt-3 text-xs font-normal text-secondary-foreground"
-                      >
-                        Taxes &amp; adjustments
-                      </th>
-                      <td className="px-6 pt-3 text-right text-xs tabular-nums">
-                        {money(adjustments)}
-                      </td>
-                    </tr>
-                  )}
-                </>
-              )}
-              <tr>
-                <th colSpan={3} className="px-6 py-4 text-xs font-medium">
-                  {journal ? "Total" : "Grand total"}
-                </th>
-                <td className="whitespace-nowrap px-6 py-4 text-right font-semibold tabular-nums">
-                  {money(
-                    journal
-                      ? f.lines.reduce((s, l) => s + l.dr, 0)
-                      : item.amount
-                  )}
-                </td>
-                {journal && (
-                  <td className="whitespace-nowrap px-6 py-4 text-right font-semibold tabular-nums">
-                    {money(f.lines.reduce((s, l) => s + l.cr, 0))}
-                  </td>
-                )}
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-        {ar && (
-          <div className="border-t border-neutral-gray px-6 py-4 text-xs text-secondary-foreground">
-            Sales ledger: {ar.salesLedger || "—"}
-          </div>
-        )}
-        {ar && (
-          <details className="border-t border-neutral-gray px-6 py-4">
-            <summary className="cursor-pointer text-xs font-medium text-primary">
-              Item and tax breakdown
-            </summary>
-            <div className="mt-4 space-y-4">
-              {ar.items
-                .filter((row) => row.amount || row.description || row.item)
-                .map((row) => (
-                  <div
-                    key={row.id}
-                    className="rounded-lg border border-neutral-gray p-4"
-                  >
-                    <p className="text-sm font-medium">
-                      {row.item || row.description || "Item"}
-                    </p>
-                    {row.item && row.description && (
-                      <p className="mt-1 text-xs text-secondary-foreground">
-                        {row.description}
-                      </p>
-                    )}
-                    <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
-                      <Detail label="Quantity" value={String(row.quantity)} />
-                      <Detail label="Unit rate" value={money(row.unitRate)} />
-                      <Detail label="Discount" value={`${row.discount}%`} />
-                      <Detail label="Tax" value={row.tax} />
-                      <Detail label="Godown" value={row.godown} />
-                      <Detail label="Cost centre" value={row.costCentre} />
-                    </dl>
-                  </div>
-                ))}
-              {ar.ledgers
-                .filter((row) => row.amount || row.ledger)
-                .map((row) => (
-                  <div
-                    key={row.id}
-                    className="flex flex-wrap justify-between gap-2 text-xs"
-                  >
-                    <span>
-                      {row.ledger || "Ledger"} · {row.description || "—"} ·{" "}
-                      {row.tax || "No tax"} ·{" "}
-                      {row.costCentre || "No cost centre"}
-                    </span>
-                    <span className="tabular-nums">{money(row.amount)}</span>
-                  </div>
-                ))}
-              {ar.taxes
-                .filter((row) => row.amount || row.ledger)
-                .map((row) => (
-                  <div
-                    key={row.id}
-                    className="flex flex-wrap justify-between gap-2 text-xs"
-                  >
-                    <span>
-                      {row.ledger || "Tax"} ·{" "}
-                      {row.costCentre || "No cost centre"}
-                    </span>
-                    <span className="tabular-nums">{money(row.amount)}</span>
-                  </div>
-                ))}
-            </div>
-          </details>
-        )}
-        {f.narration && f.narration !== "—" && (
-          <div className="border-t border-neutral-gray px-6 py-4">
-            <h3 className="text-xs text-secondary-foreground">Narration</h3>
-            <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-              {f.narration}
-            </p>
-          </div>
-        )}
-      </section>
-      {allocation && (
-        <section className="overflow-hidden rounded-xl border border-neutral-gray bg-background">
-          <div className="px-6 py-4">
-            <h2 className="text-sm font-semibold">Bill allocation</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-y border-neutral-gray bg-accent/40 text-xs text-secondary-foreground">
-                <tr>
-                  <th className="px-6 py-3 font-medium">Ref type</th>
-                  <th className="px-4 py-3 font-medium">Ref name</th>
-                  <th className="px-4 py-3 font-medium">Due date</th>
-                  <th className="px-6 py-3 text-right font-medium">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="px-6 py-4">{allocation.refType}</td>
-                  <td className="px-4 py-4">{allocation.refName}</td>
-                  <td className="px-4 py-4">{date(allocation.due)}</td>
-                  <td className="whitespace-nowrap px-6 py-4 text-right tabular-nums">
-                    {credit(allocation.amount)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+    <article aria-label="Approved voucher details" className={s.record}>
+      <header className={s.head}>
+        <h1 className={s.title}>{f.voucherNo || partyName}</h1>
+        <Badge color="positive" size="md">
+          Approved
+        </Badge>
+      </header>
+
+      <dl className={s.fields} aria-label="Voucher information">
+        <Field label={journal ? "Party" : receivable ? "Customer" : "Vendor"}>
+          {or(partyName)}
+        </Field>
+        <Field label="Amount">
+          <span className="tabular-nums">{money(grandTotal)}</span>
+        </Field>
+        <Field
+          label={
+            journal ? "Voucher date" : receivable ? "Invoice date" : "Bill date"
+          }
+        >
+          {date(f.date)}
+        </Field>
+        <Field label={journal ? "Reference date" : "Due date"}>
+          {date(f.due)}
+        </Field>
+        <Field
+          label={
+            journal
+              ? "Reference no."
+              : receivable
+                ? "Invoice no."
+                : "Supplier invoice no."
+          }
+        >
+          {or(f.invoiceNo)}
+        </Field>
+        <Field label="Voucher type">{or(f.voucherType)}</Field>
+        <Field label={receivable ? "Sales ledger" : "Purchase ledger"}>
+          {or(postingLedger)}
+        </Field>
+        <Field label="GST registration">
+          {branch || dash}
+          {gstin && <span className={s.muted}> · {gstin}</span>}
+        </Field>
+        <Field label={usesCostClass ? "Cost centre class" : "Cost centre"}>
+          {headerCostCentre || <span className={s.muted}>Set per line</span>}
+        </Field>
+      </dl>
+
+      {items.length > 0 && (
+        <Block label="Items">
+          <ItemsTable lines={items} perLineCost={perLineCost} />
+        </Block>
       )}
-      <div className="flex items-start gap-3 px-1 pb-4 text-xs leading-5 text-secondary-foreground">
-        <ShieldCheck
-          className="mt-0.5 h-4 w-4 shrink-0 text-success-green-foreground"
-          aria-hidden
-        />
-        <p>
-          Approved by{" "}
-          <span className="font-medium text-foreground">
-            {item.doneBy || "Unknown approver"}
-          </span>
-          {item.doneAt && (
-            <>
-              {" "}
-              on {date(item.doneAt)} at{" "}
-              {new Date(item.doneAt).toLocaleTimeString("en-IN", {
-                hour: "numeric",
-                minute: "2-digit",
-              })}
-            </>
-          )}
-          .<br />
-          This is the posted record. To change it, use Edit entry.
-        </p>
-      </div>
+
+      {ledgers.length > 0 && (
+        <Block label="Ledgers">
+          <LedgersTable lines={ledgers} perLineCost={perLineCost} />
+        </Block>
+      )}
+
+      {/*
+        Read top down: what the lines add to, the tax that goes on, the TDS
+        that comes off, and any adjustments. A head appears only when the
+        voucher carries it — a bill with no TDS needs no zero row.
+      */}
+      <Block label="Summary">
+        <TableShell label="Summary">
+          <tbody>
+            <tr>
+              <th scope="row" className={td}>
+                Sub total
+              </th>
+              <td className={cn(td, num)}>{money(subTotal)}</td>
+            </tr>
+            <SummaryGroup label="GST" rows={gst} />
+            <SummaryGroup label="TDS" rows={tds} minus />
+            <SummaryGroup
+              label="Adjustments"
+              rows={
+                unexplained !== 0
+                  ? [
+                      ...adjustments,
+                      { ledger: "Taxes & adjustments", amount: unexplained },
+                    ]
+                  : adjustments
+              }
+            />
+            <tr className={s.totalRow}>
+              <th scope="row" className={td}>
+                {journal ? "Total debit" : "Total"}
+              </th>
+              <td className={cn(td, num)}>{money(grandTotal)}</td>
+            </tr>
+            {rcm && (
+              <tr className={s.memoRow}>
+                <th scope="row" className={td}>
+                  GST under RCM · {rcm.ledger}
+                </th>
+                <td className={cn(td, num)}>{money(rcm.amount)}</td>
+              </tr>
+            )}
+          </tbody>
+        </TableShell>
+      </Block>
+
+      {extraGroups.length > 0 && (
+        <Block label="Additional Details">
+          {extraGroups.map((g) => (
+            <div key={g.id} className={s.extraGroup}>
+              <h3 className={s.groupLabel}>{g.label}</h3>
+              <dl className={s.extraFields}>
+                {g.fields.map((field) => (
+                  <Field key={field.key} label={field.label}>
+                    {field.type === "date"
+                      ? date(extra[field.id])
+                      : displayValue(field, extra[field.id])}
+                  </Field>
+                ))}
+              </dl>
+            </div>
+          ))}
+        </Block>
+      )}
+
+      <Block label="Attachment">
+        {item.file.name ? (
+          <button
+            type="button"
+            className={s.file}
+            onClick={() => setDocumentOpen(true)}
+          >
+            <FileText size={16} aria-hidden />
+            <span className={s.fileName}>{item.file.name}</span>
+            <span className={s.fileAction}>
+              <Eye size={16} aria-hidden />
+              <span className="sr-only">Preview</span>
+            </span>
+          </button>
+        ) : (
+          <p className={s.muted}>No document attached</p>
+        )}
+      </Block>
+
+      {narration && (
+        <Block label="Narration">
+          <p className={s.text}>{narration}</p>
+        </Block>
+      )}
+
+      <PageDialog
+        title={receivable ? "Invoice document" : "Bill document"}
+        description={item.file.name}
+        open={documentOpen}
+        onClose={() => setDocumentOpen(false)}
+        className="w-[calc(100%-32px)] max-w-[900px]"
+      >
+        <div className="h-[65vh] min-h-0">
+          <Preview item={item} />
+        </div>
+      </PageDialog>
     </article>
   );
 }

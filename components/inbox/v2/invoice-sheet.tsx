@@ -1,6 +1,11 @@
 import React, { useEffect, useRef } from "react";
 import ArSheet from "@/components/inbox/v2/ar-sheet";
 import { arDocumentFor } from "@/config/pages/inbox/ar-invoice";
+import type { FieldConfig } from "@/config/pages/inbox/additional-fields";
+import {
+  getFieldConfig,
+  setFieldConfig,
+} from "@/hooks/pages/inbox/use-field-config";
 import { Item, Form, companyOf, getState, update, updatePosted } from "./store";
 
 /**
@@ -67,6 +72,8 @@ export default function InvoiceSheet({
             manual: i.manual || !!i.file.blobId,
             route: i.route,
             fileName: i.file.name,
+            // The company's, shared with the sales upload's Map Fields page.
+            fieldConfig: getFieldConfig(i.company),
           },
           "aia-inbox-ar-v2"
         );
@@ -105,6 +112,10 @@ export default function InvoiceSheet({
           "Inbox Review Draft Updated"
         );
       }
+
+      // Saved in the sheet's own Field Configuration: the company's setting.
+      if (m?.source === "aia-ar-v2" && m.type === "fieldConfig")
+        setFieldConfig(latest.current.company, m.payload as FieldConfig);
 
       if (m?.source === "aia-ar-v2" && m.type === "approved")
         approveRef.current();

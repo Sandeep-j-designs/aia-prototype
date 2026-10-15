@@ -5,6 +5,7 @@ import {
   Info,
   RotateCcw,
   Save,
+  Settings,
   Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,12 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { Input } from "@/components/ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -30,7 +37,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ComboBox } from "@/components/common/combo-box";
-import { IMPORT_MODE_LABELS } from "@/config/pages/inbox/sales-upload";
+import {
+  IMPORT_MODE_LABELS,
+  mappingFieldGroups,
+} from "@/config/pages/inbox/sales-upload";
+import {
+  setFieldConfig,
+  useFieldConfig,
+} from "@/hooks/pages/inbox/use-field-config";
 import {
   salesUpload,
   type SalesBatchEntry,
@@ -44,11 +58,13 @@ import {
 import {
   columnSelections,
   getSuggestedTemplateName,
+  isRequiredNow,
   missingRequiredFieldLabels,
   selectField,
 } from "@/utils/pages/inbox/sales-upload";
 import { Notice, PageDialog, T } from "../ui";
 import { FlowHeader } from "./common";
+import FieldConfigDialog from "./field-config-dialog";
 import ProcessingModal from "./processing-modal";
 
 /**
@@ -80,14 +96,24 @@ const MappingPage = ({ entry, onPreview, onExit, notify }: Props) => {
     batch.status === ARVoucherImportBatchStatus.PROCESSING && !!mapping
   );
   const [confirmEdit, setConfirmEdit] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
+  const fieldConfig = useFieldConfig(entry.companyId);
 
   const reading = !mapping;
-  const missing = missingRequiredFieldLabels(batch.importMode, fieldMappings);
+  const missing = missingRequiredFieldLabels(
+    batch.importMode,
+    fieldMappings,
+    fieldConfig
+  );
   const selections = columnSelections(fieldMappings);
   const suggested = mapping ? columnSelections(mapping.mappingPayload) : {};
-  const fields = (mapping?.mappingSchema.fieldGroups ?? []).flatMap(
-    (g) => g.fields
-  );
+  /* The schema as this company's Field Configuration has it now, not as it
+     stood when the file was read: the setting can change under an open
+     mapping, here or on an invoice. */
+  const fieldGroups = mapping
+    ? mappingFieldGroups(batch.importMode, fieldConfig)
+    : [];
+  const fields = fieldGroups.flatMap((g) => g.fields);
   const busy = reading || predicting;
 
   const onClickPreview = () => {
@@ -125,48 +151,53 @@ const MappingPage = ({ entry, onPreview, onExit, notify }: Props) => {
         onClose={() => onExit("uploads")}
       />
       <div className="min-h-0 flex-1 overflow-hidden">
-        <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col gap-5 px-6 py-6">
+        <div className="flex h-full min-h-0 w-full flex-col gap-5 px-6 py-6">
           <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              {/* Item Mode | Accounting Mode — production's two-segment toggle. */}
-              <div
-                role="radiogroup"
-                aria-label="Import mode"
-                className="flex overflow-hidden rounded-md border border-input"
-              >
-                {MODES.map((mode) => {
-                  const on = batch.importMode === mode;
-                  return (
-                    <button
-                      key={mode}
-                      type="button"
-                      role="radio"
-                      aria-checked={on}
-                      disabled={busy}
-                      onClick={() => {
-                        if (on) return;
-                        salesUpload.setImportMode(id, mode);
-                        setShowMissing(false);
-                        notify(
-                          mode === VoucherViewMode.ITEM_MODE
-                            ? "Switched to Item Mode."
-                            : "Switched to Accounting Mode."
-                        );
-                      }}
-                      className={cn(
-                        "h-9 px-3 text-sm transition-colors first:border-r first:border-input disabled:cursor-not-allowed disabled:opacity-60",
-                        on
-                          ? "bg-accent font-semibold text-primary"
-                          : "bg-background font-medium text-secondary-foreground hover:text-foreground"
-                      )}
-                    >
-                      {IMPORT_MODE_LABELS[mode]}
-                    </button>
-                  );
-                })}
-              </div>
-
+            {/* One row: what the file is read as on the left, the time it
+                will take and what to do next on the right. It holds at 1280px
+                because, below 1600px, Field Configuration and Reset Mapping
+                drop their words for their icons (named on hover and to screen
+                readers) and the estimate drops its label. Buttons keep their
+                md size — Bloocks — so the words go, not the height. */}
+            <TooltipProvider delayDuration={200}>
               <div className="flex flex-wrap items-center gap-3">
+                {/* Item Mode | Accounting Mode — production's two-segment toggle. */}
+                <div
+                  role="radiogroup"
+                  aria-label="Import mode"
+                  className="flex overflow-hidden rounded-md border border-input"
+                >
+                  {MODES.map((mode) => {
+                    const on = batch.importMode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        disabled={busy}
+                        onClick={() => {
+                          if (on) return;
+                          salesUpload.setImportMode(id, mode);
+                          setShowMissing(false);
+                          notify(
+                            mode === VoucherViewMode.ITEM_MODE
+                              ? "Switched to Item Mode."
+                              : "Switched to Accounting Mode."
+                          );
+                        }}
+                        className={cn(
+                          "h-9 px-3 text-sm transition-colors first:border-r first:border-input disabled:cursor-not-allowed disabled:opacity-60",
+                          on
+                            ? "bg-accent font-semibold text-primary"
+                            : "bg-background font-medium text-secondary-foreground hover:text-foreground"
+                        )}
+                      >
+                        {IMPORT_MODE_LABELS[mode]}
+                      </button>
+                    );
+                  })}
+                </div>
                 <label className="flex items-center gap-1.5">
                   <span className={cn(T.cell, "text-secondary-foreground")}>
                     Sheet No.
@@ -225,18 +256,92 @@ const MappingPage = ({ entry, onPreview, onExit, notify }: Props) => {
                     </SelectContent>
                   </Select>
                 </label>
+                <span className="flex-1" />
+                <div className="flex flex-none items-center gap-1">
+                  <Clock
+                    className="size-3 text-secondary-foreground"
+                    aria-hidden
+                  />
+                  <HoverCard openDelay={100}>
+                    <HoverCardTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Estimated time: 12–15 minutes"
+                        className={cn(
+                          T.sub,
+                          "underline decoration-dotted underline-offset-2"
+                        )}
+                      >
+                        <span className="min-[1600px]:hidden">12–15 Mins</span>
+                        <span className="hidden min-[1600px]:inline">
+                          Estimated Time: 12–15 Mins
+                        </span>
+                      </button>
+                    </HoverCardTrigger>
+                    <HoverCardContent align="end" className="min-w-[336px] p-4">
+                      <div className="flex items-start gap-3">
+                        <Sparkles
+                          className="size-5 flex-none text-primary"
+                          aria-hidden
+                        />
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs font-semibold leading-5 text-foreground">
+                            We process your{" "}
+                            {sheet?.dataRowCount ?? batch.totalRows} rows in the
+                            background.
+                          </span>
+                          <span className={T.sub}>
+                            We match each entry to the right ledger, predict
+                            voucher types and more.
+                          </span>
+                        </div>
+                      </div>
+                    </HoverCardContent>
+                  </HoverCard>
+                </div>
                 <span className="h-9 w-px bg-neutral-gray" aria-hidden />
-                <Button
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => {
-                    salesUpload.resetMapping(id);
-                    notify("Mapping reset to backend suggestions.", "success");
-                  }}
-                >
-                  <RotateCcw aria-hidden />
-                  Reset Mapping
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      disabled={busy}
+                      aria-label="Field Configuration"
+                      onClick={() => setConfigOpen(true)}
+                    >
+                      <Settings aria-hidden />
+                      <span className="hidden min-[1600px]:inline">
+                        Field Configuration
+                      </span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="min-[1600px]:hidden">
+                    Field Configuration
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      disabled={busy}
+                      aria-label="Reset Mapping"
+                      onClick={() => {
+                        salesUpload.resetMapping(id);
+                        notify(
+                          "Mapping reset to backend suggestions.",
+                          "success"
+                        );
+                      }}
+                    >
+                      <RotateCcw aria-hidden />
+                      <span className="hidden min-[1600px]:inline">
+                        Reset Mapping
+                      </span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="min-[1600px]:hidden">
+                    Reset Mapping
+                  </TooltipContent>
+                </Tooltip>
                 <Button
                   variant="secondary"
                   disabled={busy}
@@ -257,42 +362,7 @@ const MappingPage = ({ entry, onPreview, onExit, notify }: Props) => {
                   <ArrowRight aria-hidden />
                 </Button>
               </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-1">
-              <Clock className="size-3 text-secondary-foreground" aria-hidden />
-              <HoverCard openDelay={100}>
-                <HoverCardTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      T.sub,
-                      "underline decoration-dotted underline-offset-2"
-                    )}
-                  >
-                    Estimated Time: 12–15 Mins
-                  </button>
-                </HoverCardTrigger>
-                <HoverCardContent align="end" className="min-w-[336px] p-4">
-                  <div className="flex items-start gap-3">
-                    <Sparkles
-                      className="size-5 flex-none text-primary"
-                      aria-hidden
-                    />
-                    <div className="flex flex-col gap-1">
-                      <span className="text-xs font-semibold leading-5 text-foreground">
-                        We process your {sheet?.dataRowCount ?? batch.totalRows}{" "}
-                        rows in the background.
-                      </span>
-                      <span className={T.sub}>
-                        We match each entry to the right ledger, predict voucher
-                        types and more.
-                      </span>
-                    </div>
-                  </div>
-                </HoverCardContent>
-              </HoverCard>
-            </div>
+            </TooltipProvider>
           </div>
 
           {showMissing && missing.length > 0 && (
@@ -375,12 +445,10 @@ const MappingPage = ({ entry, onPreview, onExit, notify }: Props) => {
                                     !!fieldMappings[f.key] &&
                                     selected !== f.key,
                                 }))}
-                                optionGroups={(
-                                  mapping.mappingSchema.fieldGroups ?? []
-                                ).map((group) => ({
+                                optionGroups={fieldGroups.map((group) => ({
                                   label: group.label,
                                   options: group.fields.map((f) => ({
-                                    label: f.required ? (
+                                    label: isRequiredNow(f, fieldMappings) ? (
                                       <span>
                                         {f.label}
                                         <span className="ml-1 text-destructive-foreground">
@@ -510,6 +578,20 @@ const MappingPage = ({ entry, onPreview, onExit, notify }: Props) => {
           </Button>
         </div>
       </PageDialog>
+
+      <FieldConfigDialog
+        open={configOpen}
+        config={fieldConfig}
+        mappings={fieldMappings}
+        onClose={() => setConfigOpen(false)}
+        onSave={(next) => {
+          setFieldConfig(entry.companyId, next);
+          salesUpload.applyFieldConfig(id, next);
+          setConfigOpen(false);
+          setShowMissing(false);
+          notify("Field configuration saved. Mapping refreshed.", "success");
+        }}
+      />
 
       {predicting && (
         <ProcessingModal

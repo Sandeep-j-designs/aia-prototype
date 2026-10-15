@@ -1,7 +1,7 @@
 # Publishes the prototype to GitHub Pages on every push to main.
 #
 # NEXT_PUBLIC_BASE_PATH is the repo name because Pages serves the site from
-# /aia-unified-inbox rather than the domain root. Local `next dev` sets neither
+# /aia-prototype rather than the domain root. Local `next dev` sets neither
 # variable and still serves at "/".
 name: Deploy to GitHub Pages
 
@@ -36,7 +36,7 @@ jobs:
       - run: npx next build
         env:
           NEXT_STATIC_EXPORT: "1"
-          NEXT_PUBLIC_BASE_PATH: /aia-unified-inbox
+          NEXT_PUBLIC_BASE_PATH: /aia-prototype
 
       - uses: actions/upload-pages-artifact@v3
         with:

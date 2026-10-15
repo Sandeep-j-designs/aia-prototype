@@ -1,5 +1,6 @@
 import { useMemo, useSyncExternalStore } from "react";
 import {
+  ADDITIONAL_SUGGESTION,
   MOCK_IMPORT_TEMPLATES,
   MOCK_SALES_CUSTOMERS,
   SALES_GST_REGISTRATION,
@@ -10,6 +11,14 @@ import {
   mockSalesBatches,
 } from "@/config/pages/inbox/mock-sales-upload";
 import { mappingFieldGroups } from "@/config/pages/inbox/sales-upload";
+import {
+  additionalField,
+  isAdditionalKey,
+  isLive,
+  resolveChoice,
+  type FieldConfig,
+} from "@/config/pages/inbox/additional-fields";
+import { getFieldConfig } from "@/hooks/pages/inbox/use-field-config";
 import {
   SEED_COMPANIES,
   createImportedInvoices,
@@ -27,7 +36,9 @@ import {
   buildPreviewRows,
   editPreviewRow,
   getArImportFileType,
+  pruneMappings,
   withRowCounts,
+  withSuggestions,
   type FieldMappings,
 } from "@/utils/pages/inbox/sales-upload";
 
@@ -60,15 +71,26 @@ const PREDICT_MS = 9000;
 const PREDICT_TICK_MS = 300;
 const CREATE_MS = 2000;
 
-const suggestionFor = (mode: VoucherViewMode) =>
-  mode === VoucherViewMode.ITEM_MODE
+/**
+ * The backend's whole suggestion, optional groups included — what the AI
+ * sparkle is judged against and what Reset Mapping goes back to.
+ */
+const suggestionFor = (mode: VoucherViewMode): FieldMappings => ({
+  ...(mode === VoucherViewMode.ITEM_MODE
     ? SUGGESTED_ITEM_MAPPING
-    : SUGGESTED_ACCOUNTING_MAPPING;
+    : SUGGESTED_ACCOUNTING_MAPPING),
+  ...ADDITIONAL_SUGGESTION,
+});
+
+/** That suggestion, held to the fields this company's configuration offers. */
+const effective = (suggestion: FieldMappings, config: FieldConfig) =>
+  pruneMappings(suggestion, config);
 
 /** The mapping response for the sample file, in one mode. */
 const mappingFor = (
   batch: ResponseARVoucherImportBatch,
-  suggestion: FieldMappings
+  suggestion: FieldMappings,
+  config: FieldConfig
 ): ResponseARVoucherImportBatchMapping => ({
   importBatchUuid: batch.importBatchUuid,
   status: batch.status,
@@ -77,7 +99,8 @@ const mappingFor = (
   headerRowIndex: batch.headerRowIndex,
   sheets: SAMPLE_SALES_FILE.sheets,
   detectedColumns: SAMPLE_SALES_FILE.header,
-  mappingSchema: { fieldGroups: mappingFieldGroups(batch.importMode) },
+  // DEV: the backend filters the schema by the company's field configuration.
+  mappingSchema: { fieldGroups: mappingFieldGroups(batch.importMode, config) },
   mappingPayload: suggestion,
   sampleRowPayload: Object.fromEntries(
     SAMPLE_SALES_FILE.header.map((h, i) => [
@@ -97,11 +120,15 @@ let entries: SalesBatchEntry[] = SEED_COMPANIES.flatMap((company) =>
     mapping:
       batch.status === ARVoucherImportBatchStatus.FAILED
         ? null
-        : mappingFor(batch, COMPLETE_ITEM_MAPPING),
+        : mappingFor(
+            batch,
+            { ...COMPLETE_ITEM_MAPPING, ...ADDITIONAL_SUGGESTION },
+            getFieldConfig(company.id)
+          ),
     fieldMappings:
       batch.status === ARVoucherImportBatchStatus.FAILED
         ? {}
-        : COMPLETE_ITEM_MAPPING,
+        : effective(COMPLETE_ITEM_MAPPING, getFieldConfig(company.id)),
   }))
 );
 let templates: ResponseARVoucherImportTemplate[] = MOCK_IMPORT_TEMPLATES;
@@ -197,6 +224,7 @@ export const salesUpload = {
     emit();
     window.setTimeout(() => {
       const suggestion = suggestionFor(importMode);
+      const config = getFieldConfig(companyId);
       patch(id, (e) => {
         const next = {
           ...e.batch,
@@ -206,9 +234,12 @@ export const salesUpload = {
         };
         return {
           batch: next,
-          mapping: mappingFor(next, suggestion),
+          mapping: mappingFor(next, suggestion, config),
           // A saved template prefills the mapping over the suggestion.
-          fieldMappings: template?.configPayload.fieldMappings ?? suggestion,
+          fieldMappings: effective(
+            template?.configPayload.fieldMappings ?? suggestion,
+            config
+          ),
         };
       });
     }, READ_MS);
@@ -228,10 +259,11 @@ export const salesUpload = {
     patch(id, (e) => {
       const batch = { ...e.batch, importMode };
       const suggestion = suggestionFor(importMode);
+      const config = getFieldConfig(e.companyId);
       return {
         batch,
-        mapping: mappingFor(batch, suggestion),
-        fieldMappings: suggestion,
+        mapping: mappingFor(batch, suggestion, config),
+        fieldMappings: effective(suggestion, config),
       };
     });
   },
@@ -243,7 +275,35 @@ export const salesUpload = {
 
   /** DEV: POST /api/accounts-receivable/v2/import-batches/:id/mapping/reset */
   resetMapping(id: string) {
-    patch(id, (e) => ({ fieldMappings: e.mapping?.mappingPayload ?? {} }));
+    patch(id, (e) => ({
+      fieldMappings: effective(
+        e.mapping?.mappingPayload ?? {},
+        getFieldConfig(e.companyId)
+      ),
+    }));
+  },
+
+  /**
+   * PROTOTYPE: Field Configuration changed under an open mapping. Fields
+   * switched off give their columns back; fields switched on take the
+   * backend's suggestion where the column is still free.
+   *
+   * DEV: PATCH the company's field configuration, then re-GET .../mapping.
+   */
+  applyFieldConfig(id: string, config: FieldConfig) {
+    patch(id, (e) => ({
+      mapping: e.mapping && {
+        ...e.mapping,
+        mappingSchema: {
+          fieldGroups: mappingFieldGroups(e.batch.importMode, config),
+        },
+      },
+      fieldMappings: withSuggestions(
+        pruneMappings(e.fieldMappings, config),
+        e.mapping?.mappingPayload ?? {},
+        config
+      ),
+    }));
   },
 
   /**
@@ -359,7 +419,12 @@ export const salesUpload = {
     );
     createImportedInvoices(
       entry.companyId,
-      toInvoices(eligible, entry.batch.originalFileName)
+      toInvoices(
+        eligible,
+        entry.batch.originalFileName,
+        entry.fieldMappings,
+        getFieldConfig(entry.companyId)
+      )
     );
     patch(id, (e) => ({ rows, batch: withRowCounts(e.batch, rows) }));
     return {
@@ -392,8 +457,28 @@ export const salesUpload = {
 /** Rows sharing a reference number are one invoice's lines. */
 const toInvoices = (
   rows: ResponseARVoucherImportPreviewRow[],
-  fileName: string
+  fileName: string,
+  mappings: FieldMappings,
+  config: FieldConfig
 ): ImportedInvoice[] => {
+  /* The optional fields this upload mapped, keyed the way the sales invoice
+     keys them. A list value goes in as the invoice's own id; one the list
+     does not have stays out, as the preview warned it would. */
+  const additional = Object.keys(mappings).filter(
+    (key) => isAdditionalKey(key) && isLive(config, key)
+  );
+  const extraOf = (
+    payload: ResponseARVoucherImportPreviewRow["finalPayload"]
+  ) =>
+    Object.fromEntries(
+      additional.flatMap((key) => {
+        const field = additionalField(key)!;
+        const raw = String(payload[key] ?? "").trim();
+        if (!raw) return [];
+        const value = field.type === "choice" ? resolveChoice(field, raw) : raw;
+        return value ? [[field.id, value]] : [];
+      })
+    );
   const groups = new Map<string, ResponseARVoucherImportPreviewRow[]>();
   rows.forEach((row) => {
     const key = String(row.finalPayload.reference_number ?? row.importRowUuid);
@@ -432,6 +517,7 @@ const toInvoices = (
         { ledger: "Output IGST", amount: sum("igst_amount") },
       ],
       fileName,
+      extra: extraOf(p),
     };
   });
 };

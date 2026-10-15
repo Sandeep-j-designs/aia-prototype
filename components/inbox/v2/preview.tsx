@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
+  FileText,
   Maximize,
   Minimize,
   ZoomIn,
@@ -45,7 +46,13 @@ const ZOOM_STEPS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
 const ZOOM_MENU = [0.5, 0.75, 1, 1.25, 1.5, 2];
 type Mode = "fit-width" | "fit-page" | "level";
 
-export default function Preview({ item }: { item: Item }) {
+export default function Preview({
+  item,
+  variant = "default",
+}: {
+  item: Item;
+  variant?: "default" | "record";
+}) {
   const [url, setUrl] = useState(""),
     [mode, setMode] = useState<Mode>("fit-width"),
     [level, setLevel] = useState(1),
@@ -128,12 +135,31 @@ export default function Preview({ item }: { item: Item }) {
         className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-neutral-gray bg-background"
       >
         <header className="flex shrink-0 items-center gap-3 border-b border-neutral-gray px-4 py-3">
-          <h2
-            className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-[22px] tracking-[-0.18px] text-foreground"
-            title={item.file.name}
-          >
-            {item.file.name}
-          </h2>
+          {variant === "record" ? (
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-gray bg-accent/40 text-primary">
+                <FileText size={17} aria-hidden />
+              </span>
+              <div className="min-w-0">
+                <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-secondary-foreground">
+                  Source document
+                </p>
+                <h2
+                  className="truncate text-xs font-medium text-foreground"
+                  title={item.file.name}
+                >
+                  {item.file.name}
+                </h2>
+              </div>
+            </div>
+          ) : (
+            <h2
+              className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-[22px] tracking-[-0.18px] text-foreground"
+              title={item.file.name}
+            >
+              {item.file.name}
+            </h2>
+          )}
           <div className="flex shrink-0 items-center gap-0.5">
             <ViewerAction
               label="Zoom out"
@@ -232,6 +258,17 @@ export default function Preview({ item }: { item: Item }) {
             )}
           </div>
         </div>
+        {variant === "record" && (
+          <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-neutral-gray bg-background px-5 py-3 text-[11px] text-secondary-foreground">
+            <span className="flex items-center gap-2">
+              <span className="rounded border border-neutral-gray px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                {item.file.ext}
+              </span>
+              {item.file.size}
+            </span>
+            <span>Source attachment</span>
+          </footer>
+        )}
       </div>
     </div>
   );

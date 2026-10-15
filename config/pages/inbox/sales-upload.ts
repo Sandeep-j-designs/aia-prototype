@@ -1,5 +1,11 @@
 import type { PillTone } from "@/components/inbox/v2/ui";
 import {
+  AR_ADDITIONAL_GROUPS,
+  fieldConfigDefaults,
+  liveGroups,
+  type FieldConfig,
+} from "@/config/pages/inbox/additional-fields";
+import {
   ARVoucherImportBatchStatus,
   VoucherViewMode,
   type ArImportFileType,
@@ -73,11 +79,28 @@ export const OPENABLE_AR_IMPORT_BATCH_STATUSES =
  * are the preview column labels, which is what the backend sends.
  * Required-ness follows the import mode: item lines in Item Mode, ledger
  * lines in Accounting Mode.
+ *
+ * PROTOTYPE: after Totals come the invoice's optional groups — whichever the
+ * company's Field Configuration has switched on, under the same names the
+ * sales invoice gives them. The IRP's own three (Ack No, Ack Date, IRN) are
+ * left out: they are issued when the e-invoice is generated, so no
+ * spreadsheet has them to give. A conditional field ("Order Date, once Order
+ * No(s) is filled") is required here once its trigger is mapped.
  */
 export const mappingFieldGroups = (
-  mode: VoucherViewMode
+  mode: VoucherViewMode,
+  config: FieldConfig = fieldConfigDefaults()
 ): MappingFieldGroupSchema[] => {
   const item = mode === VoucherViewMode.ITEM_MODE;
+  const additional: MappingFieldGroupSchema[] = liveGroups(config)
+    .map((g) => ({
+      id: g.id,
+      label: g.label,
+      fields: g.fields
+        .filter((f) => !f.systemOnly)
+        .map((f) => ({ key: f.key, label: f.label, requiredWhen: f.req })),
+    }))
+    .filter((g) => g.fields.length);
   return [
     {
       id: "invoice",
@@ -143,6 +166,7 @@ export const mappingFieldGroups = (
       label: "Totals",
       fields: [{ key: "total_amount", label: "Total Amount", required: true }],
     },
+    ...additional,
   ];
 };
 
@@ -384,7 +408,29 @@ export const PREVIEW_NUMBER_COLUMNS = new Set<PreviewColumnKey>([
 export const PREVIEW_DATE_COLUMNS = new Set<PreviewColumnKey>([
   "invoice_date",
   "due_date",
+  ...AR_ADDITIONAL_GROUPS.flatMap((g) => g.fields)
+    .filter((f) => f.type === "date")
+    .map((f) => f.key),
 ]);
+
+/**
+ * PROTOTYPE: the preview columns for an upload's mapped optional fields, in
+ * the invoice's group order, shown by default — the accountant mapped them,
+ * so they want to see what came through. Place of Supply already has its
+ * column above. They go in ahead of Status, which stays pinned last.
+ */
+export const additionalPreviewColumns = (
+  mappedKeys: string[]
+): PreviewColumnConfig[] =>
+  AR_ADDITIONAL_GROUPS.flatMap((g) => g.fields)
+    .filter((f) => f.key !== "place_of_supply" && mappedKeys.includes(f.key))
+    .map((f) => ({
+      key: f.key,
+      label: f.label,
+      fieldKey: f.key,
+      width: 160,
+      defaultVisible: true,
+    }));
 
 /** Fields the backend sends as locked (production `metadata.lockedFields`). */
 export const PREVIEW_LOCKED_FIELDS = new Set<PreviewColumnKey>([

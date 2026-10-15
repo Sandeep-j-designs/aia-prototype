@@ -1,4 +1,5 @@
 import type { ColumnSizes } from "@/components/inbox/v2/table-sizing";
+import { AR_ADDITIONAL_GROUPS } from "@/config/pages/inbox/additional-fields";
 
 /**
  * Column limits for the Sales upload preview grid, under the Inbox's rule (see
@@ -36,4 +37,16 @@ export const PREVIEW_COLUMN_SIZES: ColumnSizes = {
   narration: { min: 110, preferred: 180, max: 360 },
   gst_registration: { min: 172, preferred: 220, max: 300 },
   row_status: { min: 136, preferred: 140, max: 200 },
+  /* PROTOTYPE: the optional fields an upload may map. These headers carry no
+     sort or filter buttons, so the minimum is the label at 12px Medium —
+     about 6.8px a character — plus the cell's 24px of padding. */
+  ...Object.fromEntries(
+    AR_ADDITIONAL_GROUPS.flatMap((g) => g.fields).map((f) => {
+      const min = Math.ceil(f.label.length * 6.8) + 24;
+      return [
+        f.key,
+        { min, preferred: Math.max(min, 150), max: Math.max(min, 320) },
+      ];
+    })
+  ),
 };

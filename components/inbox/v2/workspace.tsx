@@ -125,6 +125,8 @@ import {
   sizeColumns,
 } from "./table-sizing";
 import { ApprovedDetails, RecordBanner } from "./record-details";
+import recordStyles from "./record-details.module.css";
+import RecordPanel from "./record-panel";
 import Sheet from "./sheet";
 import Banking, { type BankingView } from "./banking";
 import ChartOfAccounts, { type CoaView } from "./chart-of-accounts";
@@ -1433,14 +1435,12 @@ export default function Workspace() {
     !["Approved", "Deleted", "Received", "Extracting", "Failed"].includes(
       item.status
     );
-  /**
-   * One document on screen means the shell goes: sidebar and top bar both. Any
-   * detail view qualifies, not just the reviewable ones — an approved receipt
-   * or a failed extraction is still a single document being read, and having
-   * the chrome appear and disappear according to status would be worse than
-   * either state on its own.
-   */
-  const fullScreen = !!id && !!item;
+  // Posted details stay inside the app navigation; review keeps its workspace.
+  // So do a sales upload's Map Fields and Preview: both are wide tables worked
+  // through column by column, and both leave by their own Close.
+  const fullScreen =
+    (!!id && !!item && item.status !== "Approved") ||
+    (!!salesUploadBatch && salesUploadStep !== "upload");
   // The duplicate's match target is a voucher from before the Inbox, not a
   // document in it — see `priorVoucher`. It stays openable by id; it just never
   // counts as one of the queue's rows.
@@ -1798,6 +1798,16 @@ export default function Workspace() {
       notify("No changes made. Tally is already up to date.");
       return;
     }
+    afterPostedEdit(current.id);
+  };
+  /**
+   * A posted voucher has changed — by the full editor or in place on the
+   * record panel. Tally either gets it on the first run, or falls behind and
+   * is told so.
+   */
+  const afterPostedEdit = (id: string) => {
+    const current = getState().items.find((x) => x.id === id);
+    if (!current) return;
     /*
       Only a voucher Tally already has can fall behind it. Approved-but-never-
       synced is not "edited after syncing" — it is still just waiting for its
@@ -1834,6 +1844,35 @@ export default function Workspace() {
   const reason = item ? issue(item) : "";
   const approvedEditing =
     !!item && item.status === "Approved" && editingApproved === item.id;
+  /*
+    A posted record docks beside the table it was opened from — Mercury's
+    master-detail. The table stays as it was, narrowed, with the record's row
+    lit, so the next record is a click and closing loses nothing. Editing
+    needs the full width for the sheet, so the table steps aside while it is
+    open; a voucher raised by hand or the duplicate's prior voucher was never
+    in a table, so neither docks.
+  */
+  const splitView =
+    !!item &&
+    item.status === "Approved" &&
+    !item.created &&
+    !item.priorVoucher &&
+    !approvedEditing;
+  const postedInList = (x?: Item): x is Item =>
+    !!x &&
+    x.company === state.company &&
+    x.status === "Approved" &&
+    !x.created &&
+    !x.priorVoucher;
+  const fromQueue = state.queue
+    .map((qid) => state.items.find((x) => x.id === qid))
+    .filter(postedInList);
+  // Opened by link rather than from the table: every posted record, newest first.
+  const railItems = fromQueue.some((x) => x.id === item?.id)
+    ? fromQueue
+    : state.items
+        .filter(postedInList)
+        .sort((a, b) => Date.parse(b.received) - Date.parse(a.received));
   // Paging to another record closes the one you had open for editing.
   useEffect(() => {
     if (editingApproved && editingApproved !== item?.id)
@@ -2758,6 +2797,30 @@ export default function Workspace() {
   const retryableIndexes = uploadStatus.flatMap((status, i) =>
     status === "Failed" && files[i] && canRetry(files[i].name) ? [i] : []
   );
+  /** The table the record was opened from — this URL without the record. */
+  const listHref = (() => {
+    const keep = new URLSearchParams();
+    Object.entries(router.query).forEach(([key, value]) => {
+      if (key !== "id" && key !== "voucher" && typeof value === "string")
+        keep.set(key, value);
+    });
+    const query = keep.toString();
+    return query ? `/inbox?${query}` : "/inbox";
+  })();
+  /** Another record, docked beside the same table. */
+  const recordHref = (next: string) =>
+    detailHref(
+      next,
+      moduleRoute ? `module=${moduleRoute}&voucher=1` : undefined
+    );
+  /** The row whose record is docked, lit in whichever table is showing. */
+  const dockedId = splitView ? item?.id : undefined;
+  // Opened by link, the Inbox may be on a tab without this record; show the
+  // one it is in, so the lit row is on screen behind it.
+  useEffect(() => {
+    if (splitView && item && !moduleRoute && !matchesTab(item, tab))
+      setTab("Approved");
+  }, [item?.id, splitView]);
   const settledCount = uploadedCount + failedCount;
   if (!ready)
     return (
@@ -2767,7 +2830,12 @@ export default function Workspace() {
     );
   const content = (
     <>
-      <div className="flex h-full min-h-0 flex-col">
+      <div
+        className={cn(
+          "relative flex h-full min-h-0",
+          splitView && item ? "flex-row" : "flex-col"
+        )}
+      >
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
           {!state.permissions.length ? (
             <EmptyState title="Inbox access required">
@@ -2789,7 +2857,7 @@ export default function Workspace() {
                 Back to Inbox
               </Button>
             </EmptyState>
-          ) : item ? (
+          ) : item && !splitView ? (
             <>
               {/* Document routing and status lead; navigation and actions sit on the right. */}
               <div
@@ -2799,17 +2867,21 @@ export default function Workspace() {
                   "shrink-0 border-b border-neutral-gray bg-background py-3"
                 )}
               >
-                <PageButton
-                  label={
-                    item.created
-                      ? `Back to ${moduleNames[item.route]}`
-                      : "Back to Inbox"
-                  }
-                  disabled={false}
-                  onClick={() => void router.push(exitHref)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </PageButton>
+                {/* In the split view the list's close button is the way
+                    back; a second one here would say the same thing. */}
+                {!splitView && (
+                  <PageButton
+                    label={
+                      item.created
+                        ? `Back to ${moduleNames[item.route]}`
+                        : "Back to Inbox"
+                    }
+                    disabled={false}
+                    onClick={() => void router.push(exitHref)}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </PageButton>
+                )}
                 {/*
                   A voucher raised by hand was never read off a document, so
                   there is no AI pick to override and nothing to re-extract
@@ -2931,8 +3003,9 @@ export default function Workspace() {
                   the queue. Previous used to appear only past the first document,
                   which shifted Next sideways the moment you paged off it.
                 */}
-                {/* One voucher, raised by hand: nothing to page through. */}
-                {!item.created && (
+                {/* One voucher, raised by hand: nothing to page through. The
+                    split view's list is the pager there. */}
+                {!item.created && !splitView && (
                   <div className="flex items-center gap-1">
                     <PageButton
                       label="Previous document"
@@ -3048,20 +3121,11 @@ export default function Workspace() {
                     Tally has this copy — is the cloud up there beside the pill.
                     Edit entry went with it, into the action group.
                   */}
-                  <div className="min-h-0 flex-1 overflow-auto bg-accent/30">
-                    <div
-                      className={cn(
-                        "mx-auto grid max-w-[1600px] grid-cols-1",
-                        !item.created && "lg:grid-cols-[minmax(280px,35%)_1fr]"
-                      )}
-                    >
-                      {/* A voucher raised by hand has no document to show. */}
-                      {!item.created && (
-                        <div className="lg:sticky lg:top-0 lg:h-[calc(100vh-160px)]">
-                          <Preview item={item} />
-                        </div>
-                      )}
-                      <div className="min-w-0 p-5 lg:pl-1">
+                  {/* Keyed so each record opens at its top, not at the
+                      scroll position the last one was left at. */}
+                  <div key={item.id} className={recordStyles.workspace}>
+                    <div className={recordStyles.layout}>
+                      <div className={recordStyles.content}>
                         {item.route === "JV" ? (
                           <JournalVoucher
                             item={item}
@@ -3481,6 +3545,7 @@ export default function Workspace() {
             */
             moduleRoute === "AP" ? (
               <BillRegister
+                activeId={dockedId}
                 key={state.company}
                 items={moduleItems}
                 selected={selected}
@@ -3490,7 +3555,9 @@ export default function Workspace() {
                   void router.push(
                     detailHref(
                       x.id,
-                      x.status === "Approved" ? "voucher=1" : undefined
+                      x.status === "Approved"
+                        ? `module=${moduleRoute}&voucher=1`
+                        : undefined
                     )
                   );
                 }}
@@ -3535,6 +3602,7 @@ export default function Workspace() {
               />
             ) : (
               <Register
+                activeId={dockedId}
                 /*
                 Keyed by route: the three registers are the same element in the
                 tree, so without this the tab and page you left Purchases on
@@ -3552,7 +3620,9 @@ export default function Workspace() {
                   void router.push(
                     detailHref(
                       x.id,
-                      x.status === "Approved" ? "voucher=1" : undefined
+                      x.status === "Approved"
+                        ? `module=${moduleRoute}&voucher=1`
+                        : undefined
                     )
                   );
                 }}
@@ -4439,12 +4509,15 @@ export default function Workspace() {
                             aria-rowindex={rowIndex + 2}
                             aria-selected={selected.includes(x.id)}
                             onClick={() => open(x)}
+                            aria-current={
+                              x.id === dockedId ? "true" : undefined
+                            }
                             // `group` so the pinned Actions cell can pick the
                             // row's hover tint back up — it paints its own
                             // ground and would otherwise stay pale.
                             className={cn(
                               "group cursor-pointer hover:bg-transparent",
-                              selected.includes(x.id) &&
+                              (selected.includes(x.id) || x.id === dockedId) &&
                                 "bg-accent hover:bg-accent"
                             )}
                           >
@@ -4454,7 +4527,10 @@ export default function Workspace() {
                               className={cn(
                                 "left-0 h-[45px] px-3 py-0 align-middle",
                                 STICKY_CELL,
-                                cellGround(selected.includes(x.id), true)
+                                cellGround(
+                                  selected.includes(x.id) || x.id === dockedId,
+                                  true
+                                )
                               )}
                             >
                               <Checkbox
@@ -4498,7 +4574,8 @@ export default function Workspace() {
                                   "h-[45px] overflow-hidden px-3 py-0 align-middle",
                                   c in stickyLeft && STICKY_CELL,
                                   cellGround(
-                                    selected.includes(x.id),
+                                    selected.includes(x.id) ||
+                                      x.id === dockedId,
                                     c in stickyLeft
                                   ),
                                   T.cell,
@@ -4770,7 +4847,10 @@ export default function Workspace() {
                               */
                               className={cn(
                                 "sticky right-0 z-[1] h-[45px] border-l border-neutral-gray px-3 py-0 align-middle",
-                                cellGround(selected.includes(x.id), true)
+                                cellGround(
+                                  selected.includes(x.id) || x.id === dockedId,
+                                  true
+                                )
                               )}
                             >
                               <RowActions
@@ -5038,6 +5118,34 @@ export default function Workspace() {
             </>
           )}
         </main>
+        {splitView && item && (
+          <RecordPanel
+            item={item}
+            company={company.name}
+            items={railItems}
+            syncState={
+              sync.inFlightIds.has(item.id)
+                ? "syncing"
+                : sync.syncedIds.has(item.id)
+                  ? "synced"
+                  : item.resyncNeeded
+                    ? "stale"
+                    : "pending"
+            }
+            canEdit={state.permissions.includes(item.route)}
+            onOpen={(next) => void router.push(recordHref(next))}
+            onEdit={() => setEditingApproved(item.id)}
+            onEdited={afterPostedEdit}
+            onDelete={() =>
+              askDelete(`“${item.form.voucherNo || item.file.name}”`, () => {
+                remove(item.id);
+                notify(`Deleted ${item.form.voucherNo || item.file.name}.`);
+                void router.push(listHref);
+              })
+            }
+            onClose={() => void router.push(listHref)}
+          />
+        )}
       </div>
       <PageDialog
         open={dialog === "intake" || dialog === "whatsapp"}
@@ -6236,6 +6344,8 @@ export default function Workspace() {
     </div>
   ) : (
     <SidebarLayout
+      // The split view asks for the icon rail to make room for its list.
+      defaultSidebarState={splitView ? false : undefined}
       inboxCount={
         books.filter((x) => !x.created && x.status === "Needs Review").length
       }
@@ -6491,7 +6601,10 @@ function ReviewForm({
    * of `Form` that is not, and it belongs to the journal, which has its own
    * form now — so it is excluded here rather than special-cased at each cell.
    */
-  type TextField = Exclude<keyof Omit<Form, "lines">, "costClassEnabled">;
+  type TextField = Exclude<
+    keyof Omit<Form, "lines" | "extra">,
+    "costClassEnabled"
+  >;
   const fields: [TextField, string, string][] = [
     ["gst", "GST Registration", "text"],
     ["voucherType", "Voucher Type", "text"],

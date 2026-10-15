@@ -1,0 +1,1037 @@
+/*
+  The record panel: a grey ground holding a quiet toolbar, with the voucher on
+  a sheet above it. The table it was opened from keeps the rest of the width.
+  Motion is transform and opacity only; the table's narrowing is not animated.
+*/
+.panel {
+  --enter: 220ms;
+  --exit: 160ms;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  width: clamp(560px, 52%, 880px);
+  min-height: 0;
+  background: hsl(var(--section));
+  border-left: 1px solid hsl(var(--neutral-gray));
+  animation: panel-in var(--enter) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+/* Expanded, the panel covers the table instead of reflowing it, so the table
+   keeps its scroll position and width for when it comes back. */
+.expanded {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  width: auto;
+  border-left: 0;
+}
+.leaving {
+  animation: panel-out var(--exit) cubic-bezier(0.4, 0, 1, 1) both;
+}
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+}
+@keyframes panel-out {
+  to {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel,
+  .leaving {
+    animation: none;
+  }
+}
+
+/* ----------------------------------------------------------------- toolbar */
+
+.toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 24px 12px;
+}
+.group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: hsl(var(--border));
+}
+.sync {
+  display: inline-flex;
+  margin-left: 4px;
+}
+.tool {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9999px;
+  background: hsl(var(--neutral-gray));
+  color: hsl(var(--foreground));
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+.tool:hover:not(:disabled) {
+  background: hsl(var(--border));
+}
+.tool:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+.tool:disabled {
+  cursor: not-allowed;
+  color: hsl(var(--secondary-foreground));
+  opacity: 0.5;
+}
+/* Red only on intent — the control is grey until it is reached for. */
+.danger:hover:not(:disabled) {
+  background: hsl(var(--badge-negative));
+  color: hsl(var(--destructive));
+}
+
+/* ------------------------------------------------------------------- sheet */
+
+.scroll {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 0 24px 24px;
+  scrollbar-gutter: stable;
+}
+.sheet {
+  min-height: 100%;
+  padding: 32px;
+  border: 1px solid hsl(var(--neutral-gray));
+  border-radius: 12px;
+  background: hsl(var(--background));
+}
+.expanded .sheet {
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+/* ------------------------------------------------------------- the form */
+
+/*
+  A bill reads through its own form — the AP sheet, run in the panel without
+  its document pane. Reading, it is dressed as Mercury's record: a header
+  where the mode tabs sit, one left edge for every title, label and value,
+  plain text where the boxes are. Editing, the form's own dress comes back.
+
+  The rule that keeps the switch smooth: nothing changes height. Every row
+  of the form is the same height in both modes, so the values never move up
+  or down. What changes is paint (borders, fills, colour, opacity) and the
+  horizontal insets — the card's 20px and each box's 16px — which slide open
+  as the boxes fade in.
+*/
+.form {
+  --swap: 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The engine's masters banner and toasts stay out of the panel in both
+   modes: the banner pushes the form down the moment it appears, and the
+   extraction toast is about a document that was read long ago. */
+.form
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(:is(.sugsum, #dupe-banner, .toasts)) {
+  display: none !important;
+}
+
+/* Everything that changes between the modes changes over the same curve. */
+.form
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(
+    :is(
+      .card,
+      .control,
+      .cell,
+      .split,
+      .bd-fld,
+      .bd-rc,
+      .bd-rc__val,
+      .addl,
+      .narration textarea,
+      .t-label,
+      .t-section,
+      .picker__label,
+      .predtag,
+      .switch,
+      .modebar
+    )
+  ) {
+  transition:
+    padding var(--swap),
+    max-width var(--swap),
+    margin var(--swap),
+    border-color var(--swap),
+    background-color var(--swap),
+    box-shadow var(--swap),
+    color var(--swap),
+    opacity var(--swap);
+}
+.form
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(
+    :is(
+      .ico,
+      .pencil,
+      .cellcaret,
+      .predbtn,
+      .bd-tog,
+      .bd-del,
+      .bd-chev,
+      .bd-chev-sm,
+      .bd-itc,
+      .kindtoggle,
+      .split__addon--btn,
+      .row-menu,
+      .checkbox,
+      .fcbtn,
+      .req,
+      .addl__btn,
+      #btn-add-item,
+      #btn-add-ledger,
+      .segmented button,
+      .fieldplus,
+      .bd-mode,
+      .bd-mode__dot
+    )
+  ) {
+  transition: opacity var(--swap);
+}
+
+/* ----------------------------------------------------------- record head */
+
+/*
+  Reading, the record names itself where the mode tabs sit: voucher no. as a
+  light 28px title with its status, the amount on the right. Same box as the
+  tab strip (40px), so the form below starts where it always does.
+*/
+.recordHead {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  right: 20px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 40px;
+  transition: opacity var(--swap);
+}
+.editingForm .recordHead {
+  opacity: 0;
+  pointer-events: none;
+}
+.recordTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 36px;
+  letter-spacing: -0.4px;
+  color: hsl(var(--foreground));
+}
+.recordAmount {
+  margin-left: auto;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 28px;
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--foreground));
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.modebar) {
+  opacity: 0;
+}
+
+/* ------------------------------------------------------------- one edge */
+
+/* The grey card loses its fill and its side inset, so its titles, labels
+   and values stand on the same edge as Item Details and the tables. */
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.card) {
+  background: hsl(var(--background)) !important;
+  box-shadow: inset 0 0 0 1px hsl(var(--neutral-gray));
+}
+/* Each box loses its border, fill and inset: the value sits under its
+   label. */
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(
+    :is(
+      .control,
+      .split,
+      .bd-fld,
+      .bd-rc,
+      .bd-rc__val,
+      .narration textarea,
+      .control--offer
+    )
+  ) {
+  padding-inline: 0 !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.cell) {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+/* The "New" tag beside a vendor or ledger folds away, so the name it sits
+   in front of starts on the edge too. */
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.predtag) {
+  max-width: 0 !important;
+  padding-inline: 0 !important;
+  margin-inline: 0 !important;
+  border-width: 0 !important;
+  overflow: hidden;
+  opacity: 0;
+}
+/* Cost centre class or centre: the switch and the mode not in use fold
+   away, and the one that applies is the field's label. */
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.switch-row) {
+  gap: 0;
+}
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(:is(.switch, .switch-row .t-label.is-off)) {
+  max-width: 0;
+  margin: 0 !important;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0;
+}
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.switch-row .t-label) {
+  max-width: 240px;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ type */
+
+/* Titles at full strength, labels quiet, values plain — Mercury's scale. */
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(:is(.t-section, .addl__ttl)) {
+  color: hsl(var(--foreground)) !important;
+}
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(
+    :is(
+      .field .t-label,
+      .switch-row .t-label,
+      .picker__label,
+      .narration .t-label
+    )
+  ) {
+  font-weight: 400 !important;
+  color: hsl(var(--secondary-foreground)) !important;
+}
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(:is(select, input, textarea):not(.control__date)) {
+  background: transparent !important;
+  box-shadow: none !important;
+  -webkit-text-fill-color: hsl(var(--foreground));
+  color: hsl(var(--foreground)) !important;
+  opacity: 1 !important;
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.control > .t-value) {
+  color: hsl(var(--foreground));
+}
+/* The purchase ledger is a link-blue picker on the form; here, a value. */
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.picker__state select) {
+  -webkit-text-fill-color: hsl(var(--foreground));
+}
+
+/* ------------------------------------------------------------- read-only */
+
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(:is(input, select, textarea, button, label)) {
+  pointer-events: none;
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(select) {
+  background-image: none !important;
+}
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(:is(input, textarea):not(.hsn__input))::placeholder {
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+/* A locked field reads at full strength; it is a fact here, not an
+   unavailable control. */
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.is-disabled) {
+  opacity: 1 !important;
+}
+/* Additional Details keeps its card, outlined like the others. */
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.addl) {
+  border-color: hsl(var(--neutral-gray)) !important;
+  background: hsl(var(--background)) !important;
+}
+
+/* Everything that only exists to change the bill. Faded rather than
+   removed, so it holds its space and Edit brings it back in place. */
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(
+    :is(
+      .ico,
+      .pencil,
+      .cellcaret,
+      .predbtn,
+      .bd-tog,
+      .bd-del,
+      .bd-chev,
+      .bd-chev-sm,
+      .bd-itc,
+      .kindtoggle,
+      .split__addon--btn,
+      .row-menu,
+      .checkbox,
+      .fcbtn,
+      .req,
+      .addl__btn,
+      #btn-add-item,
+      #btn-add-ledger,
+      .fieldplus,
+      .bd-mode__dot
+    )
+  ) {
+  opacity: 0;
+}
+/* A radio set (TDS / TCS / Others) reads as the one that applies. */
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.bd-mode:not(.is-on)) {
+  opacity: 0;
+}
+
+/* --------------------------------------------------------------- empties */
+
+/* An empty field says so with a dash rather than a gap. The control is the
+   anchor; the dash sits where the value would. */
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.control) {
+  position: relative;
+}
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(.control select:has(option:checked[value=""])) {
+  -webkit-text-fill-color: transparent;
+  color: transparent !important;
+}
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(
+    .control:has(
+      select option:checked[value=""],
+      input.control__input:placeholder-shown
+    )
+  )::after {
+  content: "—";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  color: hsl(var(--secondary-foreground));
+}
+
+/* ------------------------------------------------------------------- edit */
+
+.editTitle {
+  padding-left: 4px;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+  color: hsl(var(--foreground));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .form,
+  .form * {
+    transition: none !important;
+  }
+}
+
+/* The * markers fold to nothing rather than just fading, or every label
+   would start a character in from its value. */
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.req) {
+  display: inline-block;
+  max-width: 1.5em;
+  overflow: hidden;
+  vertical-align: bottom;
+  white-space: pre;
+  transition:
+    max-width var(--swap),
+    opacity var(--swap);
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.req) {
+  max-width: 0;
+}
+/* With the tag and icons folded, the box's internal gap would still push
+   the value in. */
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(:is(.control, .cell)) {
+  gap: 0 !important;
+}
+
+/* Table values sit under their column headings, not a box-inset in. */
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.cell) {
+  padding-inline: 0 !important;
+}
+/* The applicable deduction reads as its name alone; the radio dot folds. */
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.bd-mode__dot) {
+  transition:
+    max-width var(--swap),
+    margin var(--swap),
+    opacity var(--swap);
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.bd-mode__dot) {
+  max-width: 0;
+  margin: 0 !important;
+  border-width: 0;
+  overflow: hidden;
+}
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(:is(.bd-mode__dot, .bd-mode input)) {
+  visibility: hidden;
+}
+
+/* ---------------------------------------------------------------- tables */
+
+/*
+  The line tables, read: a hairline-bordered box like the rest of the
+  record, headings in the label voice on white, values under them. The
+  row-selection and row-menu columns fold to nothing and the "read from the
+  description" bar beside a predicted row goes; an HSN line with no code
+  says nothing rather than "HSN/SAC —".
+*/
+.form
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(:is(.tcell, .table-scroll, .trow.has-pred)) {
+  transition:
+    width var(--swap),
+    padding var(--swap),
+    border-color var(--swap),
+    background-color var(--swap),
+    color var(--swap);
+}
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.trow.has-pred::before) {
+  transition: opacity var(--swap);
+}
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.hsn) {
+  transition: opacity var(--swap);
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.table-scroll) {
+  border: 1px solid hsl(var(--neutral-gray));
+  border-radius: 8px;
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.tcell) {
+  border-color: hsl(var(--neutral-gray)) !important;
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.trow--head .tcell) {
+  background: transparent !important;
+  font-weight: 400 !important;
+  color: hsl(var(--secondary-foreground)) !important;
+}
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(:is(.col-check, .col-menu)) {
+  width: 0 !important;
+  min-width: 0 !important;
+  padding-inline: 0 !important;
+  border-width: 0 !important;
+  overflow: hidden;
+}
+/* The outer box draws the table's edge now. */
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(.trow > .tcell:nth-child(2)) {
+  border-left-width: 0 !important;
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.tcell--last) {
+  border-right-width: 0 !important;
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.trow:last-child > .tcell) {
+  border-bottom-width: 0 !important;
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.trow.has-pred::before) {
+  opacity: 0;
+}
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(.hsn:has(.hsn__input:placeholder-shown)) {
+  opacity: 0;
+}
+
+/*
+  Fit, don't scroll. Each column keeps its share of the form's own widths
+  (230 description, 340 item or ledger, 223 cost centre…) and the table
+  takes exactly the width it is given. Below the width where the figures
+  would start to clip, the form's sideways scroll comes back.
+*/
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.tscroll) {
+  container-type: inline-size;
+}
+@container (min-width: 600px) {
+  .form :global(:is(.ap-sheet, .ar-sheet)) :global(#ledgers-table) {
+    min-width: 0;
+  }
+  .form
+    :global(:is(.ap-sheet, .ar-sheet))
+    :global(
+      #ledgers-table .tcell:is(.col-med, .col-ledger, .col-num, .col-wide)
+    ) {
+    width: auto !important;
+    min-width: 0;
+    flex: var(--share) 1 0;
+  }
+}
+@container (min-width: 900px) {
+  .form :global(:is(.ap-sheet, .ar-sheet)) :global(#items-table) {
+    min-width: 0;
+  }
+  .form
+    :global(:is(.ap-sheet, .ar-sheet))
+    :global(
+      #items-table
+        .tcell:is(
+          .col-desc,
+          .col-item,
+          .col-med,
+          .col-godown,
+          .col-qty,
+          .col-num,
+          .col-wide
+        )
+    ) {
+    width: auto !important;
+    min-width: 0;
+    flex: var(--share) 1 0;
+  }
+}
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.col-desc) {
+  --share: 230;
+}
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.col-item) {
+  --share: 340;
+}
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.col-ledger) {
+  --share: 340;
+}
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.col-med) {
+  --share: 223;
+}
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.col-godown) {
+  --share: 220;
+}
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.col-qty) {
+  --share: 115;
+}
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.col-num) {
+  --share: 167;
+}
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.col-wide) {
+  --share: 260;
+}
+
+/* ---------------------------------------------------------------- totals */
+
+/* The totals read as the record's summary: white, one hairline box, every
+   figure in the text colour — the grand total leads by weight, not by the
+   form's link blue. */
+.form
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(:is(.breakdown, .bd-fig--grand, .bd-rc__label)) {
+  transition:
+    border-color var(--swap),
+    background-color var(--swap),
+    box-shadow var(--swap),
+    color var(--swap);
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.breakdown) {
+  border-color: hsl(var(--neutral-gray)) !important;
+  background: hsl(var(--background)) !important;
+  box-shadow: none !important;
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.bd-fig--grand) {
+  color: hsl(var(--foreground)) !important;
+}
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(:is(.bd-rc__label, .bd-rc select)) {
+  -webkit-text-fill-color: hsl(var(--secondary-foreground));
+  color: hsl(var(--secondary-foreground)) !important;
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.bd-mode) {
+  gap: 0 !important;
+  padding-left: 0 !important;
+}
+/* A fitted table is never clipped, so its scroll-edge fade has no job. */
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.tscroll::after) {
+  opacity: 0 !important;
+}
+/* Edit keeps the box's 1px border, unpainted, so the rows below it hold
+   still when the outline fades. */
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.table-scroll) {
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.table-scroll) {
+  border-color: hsl(var(--neutral-gray));
+}
+/* The heading row's rule is drawn as an inset shadow, not a border, so the
+   header keeps its height in both modes. */
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.trow--head .tcell) {
+  box-shadow: inset 0 -1px 0 hsl(var(--neutral-gray));
+}
+
+/* The space after a folded * still sets the label a character in. */
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.t-label:has(> .req)) {
+  transition: text-indent var(--swap);
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.t-label:has(> .req)) {
+  text-indent: -0.3em;
+}
+/* The faded Edit Details button gives its width back, so the section's
+   rule runs to the edge like every other. */
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.addl__btn) {
+  position: absolute;
+  right: 0;
+}
+.reading :global(:is(.ap-sheet, .ar-sheet)) :global(.addl) {
+  position: relative;
+}
+/* A line with no cost centre or godown reads as a dash, not a prompt. */
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.cell) {
+  position: relative;
+}
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(
+    select:is([data-f="costCentre"], [data-f="godown"]):has(
+        option:checked[value=""]
+      )
+  ) {
+  -webkit-text-fill-color: transparent;
+  color: transparent !important;
+}
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(
+    .cell:has(
+      select:is([data-f="costCentre"], [data-f="godown"])
+        option:checked[value=""]
+    )
+  )::after {
+  content: "—";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  color: hsl(var(--secondary-foreground));
+}
+
+/* ----------------------------------------------------------- containers */
+
+/*
+  Segmentation by container: Bill and Vendor details share one white,
+  hairline-outlined card (the outline is an inset shadow, so no row moves),
+  split by a rule drawn in the gap above Vendor Details. Additional
+  Details, the line tables and the totals are outlined the same way, so the
+  record reads as a short stack of matching panels under its header.
+*/
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(:is(.t-section, .addl__ttl)) {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  color: hsl(var(--foreground)) !important;
+}
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(.card > .t-section ~ .t-section) {
+  position: relative;
+}
+.reading
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(.card > .t-section ~ .t-section)::before {
+  content: "";
+  position: absolute;
+  left: -20px;
+  right: -20px;
+  top: -13px;
+  height: 1px;
+  background: hsl(var(--neutral-gray));
+}
+/* The sheet tags a changed field "Edited by you" by appending a line to it;
+   in the panel that line would grow the field, so it never shows. */
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.inbox-edited) {
+  display: none !important;
+}
+
+/* ---------------------------------------------------------------- journal */
+
+/* A journal has no mode tabs to sit over, so its header takes its own row
+   and stays in both modes — the form below it never moves. */
+.journalHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 40px;
+  margin-bottom: 24px;
+}
+
+/*
+  The journal's read skin — the same rules as the sheets', written against
+  the journal form's own markup (shadcn controls in .journal-voucher): white
+  outlined panels, plain values on the label's edge, every control's chrome
+  folded or faded, and a dash for an empty value. Heights never change.
+*/
+.form
+  :global(.journal-voucher)
+  :global(:is(section, input, textarea, button, label, th, td, span)) {
+  transition:
+    padding var(--swap),
+    border-color var(--swap),
+    background-color var(--swap),
+    box-shadow var(--swap),
+    color var(--swap),
+    opacity var(--swap);
+}
+/* Panels: the grey Voucher Details card and the totals go white and take a
+   hairline outline (an inset shadow, so nothing moves). */
+.reading :global(.journal-voucher) :global(:is(.bg-section)) {
+  background: hsl(var(--background)) !important;
+  box-shadow: inset 0 0 0 1px hsl(var(--neutral-gray));
+}
+/* Controls: no border, fill, shadow or inset — the value under its label. */
+.reading
+  :global(.journal-voucher)
+  :global(
+    :is(
+      input,
+      textarea,
+      button[role="combobox"],
+      .journal-details-grid button,
+      td > button
+    )
+  ) {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding-inline: 0 !important;
+  pointer-events: none;
+  resize: none;
+  opacity: 1 !important;
+  color: hsl(var(--foreground));
+}
+.reading :global(.journal-voucher) :global(:is(input, textarea))::placeholder {
+  color: transparent;
+}
+/* Chevrons, calendars, the * markers, the ₹ prefixes, the switch and the
+   mode not in use, the row remove buttons and Add Ledger Line. */
+.reading
+  :global(.journal-voucher)
+  :global(
+    :is(
+      button svg,
+      .text-destructive-foreground,
+      td .pointer-events-none.absolute,
+      button[role="switch"],
+      section > button,
+      td:last-child > button
+    )
+  ) {
+  opacity: 0;
+}
+.reading
+  :global(.journal-voucher)
+  :global(.journal-cost-class label:last-of-type) {
+  opacity: 0;
+}
+/* Labels quiet; the * folds so the label starts on the value's edge. */
+.reading :global(.journal-voucher) :global(label) {
+  color: hsl(var(--secondary-foreground));
+}
+.reading
+  :global(.journal-voucher)
+  :global(label > .text-destructive-foreground) {
+  display: none;
+}
+/* An unset picker reads as a dash, not its prompt. */
+.reading :global(.journal-voucher) :global(button[data-placeholder]) {
+  position: relative;
+  color: transparent !important;
+}
+.reading :global(.journal-voucher) :global(button[data-placeholder])::after {
+  content: "—";
+  position: absolute;
+  left: 0;
+  color: hsl(var(--secondary-foreground));
+}
+/* The line table: one outline, headings on white in the label voice, the
+   unused side of each line (0.00) blank. */
+.reading :global(.journal-voucher) :global(.overflow-x-auto:has(> table)) {
+  box-shadow: inset 0 1px 0 hsl(var(--neutral-gray));
+}
+.reading :global(.journal-voucher) :global(thead tr) {
+  background: transparent !important;
+}
+.reading :global(.journal-voucher) :global(th) {
+  font-weight: 400 !important;
+  color: hsl(var(--secondary-foreground)) !important;
+}
+.reading :global(.journal-voucher) :global(td input[value="0.00"]) {
+  color: transparent;
+}
+/* Fit, don't scroll: from 760px the journal's line table takes the width
+   it is given instead of its 794px minimum (narrower, Line Narration would
+   squeeze to nothing). Both modes, so Edit never
+   reflows the columns. */
+.form :global(.journal-voucher) :global(.overflow-x-auto:has(> table)) {
+  container-type: inline-size;
+}
+@container (min-width: 760px) {
+  .form :global(.journal-voucher) :global(table) {
+    min-width: 0 !important;
+  }
+}
+
+/* --------------------------------------------------------------- document */
+
+/*
+  The body is two columns: the source document and the record. The document
+  column sits at zero until the expanded record is edited, then opens to
+  half the width; the grid track animates, so the form narrows in step with
+  the document arriving instead of jumping to its new width.
+*/
+.split {
+  --doc-swap: 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: 0fr 1fr;
+  transition: grid-template-columns var(--doc-swap);
+}
+.withDocument {
+  grid-template-columns: 1fr 1fr;
+}
+.split > .scroll {
+  min-width: 0;
+}
+.documentPane {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity var(--doc-swap);
+}
+.withDocument .documentPane {
+  opacity: 1;
+}
+/* Holds a readable width while its column opens, so the page is clipped
+   rather than squeezed mid-animation. */
+.documentInner {
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - 24px);
+  min-width: 300px;
+  margin-left: 24px;
+  overflow: hidden;
+  /* The preview draws its own card; this only sizes and clips it. */
+  border-radius: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .split,
+  .documentPane {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------ breakpoints */
+
+/*
+  One structure at every width. The sheets fold their details card to one
+  column when the form is under 600px, and the journal runs one, two or
+  three columns by its own width and puts narration under the totals below
+  xl. In the panel the record keeps the form's two-column shape and its
+  narration-beside-totals close however wide or narrow the panel is —
+  docked, expanded, beside the document, or on a small screen.
+*/
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.card) {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 24px 30px !important;
+}
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.closing) {
+  flex-wrap: nowrap !important;
+}
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.closing .narration) {
+  min-width: 0;
+}
+.form :global(.journal-voucher) :global(.journal-details-grid) {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+.form :global(.journal-voucher) :global(.journal-cost-class) {
+  grid-column: span 2 !important;
+}
+.form :global(.journal-voucher) :global(.journal-cost-class-select) {
+  width: calc(50% - 18px) !important;
+}
+.form :global(.journal-voucher) :global(.grid.xl\:grid-cols-2) {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+/* A label or tab that wrapped in one mode and not the other would move
+   every row under it, so they hold one line at every width and truncate. */
+.form
+  :global(:is(.ap-sheet, .ar-sheet))
+  :global(:is(.field .t-label, .picker__label, .segmented button, .fcbtn)) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.form :global(.journal-voucher) :global(.journal-details-grid label) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* On a narrow panel the document gives the record the larger share, so the
+   form keeps room for its two columns. */
+.panel {
+  container-type: inline-size;
+}
+@container (max-width: 1240px) {
+  .withDocument {
+    grid-template-columns: 2fr 3fr;
+  }
+}
+@container (max-width: 900px) {
+  .withDocument {
+    grid-template-columns: 1fr 2fr;
+  }
+}
+
+/* The class / centre switch row stays inside its column when it is narrow. */
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.switch-row) {
+  min-width: 0;
+  overflow: hidden;
+}

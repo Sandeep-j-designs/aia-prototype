@@ -15,12 +15,15 @@ export default function Sheet({
   onApproved,
   allowEdits = false,
   onReady,
+  noDocument,
 }: {
   item: Item;
   onApproved: () => void;
   /** Lets a posted voucher take drafts while it is deliberately open for edit. */
   allowEdits?: boolean;
   onReady: (send: (type: string) => void) => void;
+  /** Drop the sheet's document pane — the record panel shows the form alone. */
+  noDocument?: boolean;
 }) {
   const seeded = useRef(false),
     latest = useRef(item),
@@ -91,7 +94,19 @@ export default function Sheet({
         // A hand-raised bill has nothing read off a document: without a seed
         // the sheet stays the blank form it is standalone, and raises no
         // "Bill data extracted" toast.
-        if (!i.created) send("seed", apDocumentFor(original));
+        // The header allocation travels with the seed, which would otherwise
+        // put the sheet's sample class back over it.
+        if (!i.created)
+          send("seed", {
+            ...apDocumentFor(original),
+            // The record panel reads a ledger-only bill in Accounting Mode,
+            // with no blank item row standing in for items it never had.
+            accountingIfNoItems: !!noDocument,
+            headerCost: {
+              klass: i.form.costClass,
+              centre: i.form.costCentre,
+            },
+          });
         /*
           Real uploaded bytes, as their own message rather than a field on
           `context`. Resolving the blob URL is async and `seed` has to follow
@@ -138,7 +153,7 @@ export default function Sheet({
       // engine — it boots against the DOM and holds the bill in closure state.
       key={`${item.company}-${item.id}-${item.route}`}
       itemId={`${item.company}-${item.id}-${item.route}`}
-      noDocument={item.created}
+      noDocument={noDocument || item.created}
     />
   );
 }
