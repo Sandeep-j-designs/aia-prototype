@@ -38,4 +38,6 @@ export type PageTopBarProps = QuickActionsProps & {
   onBulkUpload?: () => void;
   bulkUploadIcon?: LucideIcon;
   className?: string;
+  /** The left of the actions' row: the page's view tabs, when it has them. */
+  leading?: ReactNode;
 };

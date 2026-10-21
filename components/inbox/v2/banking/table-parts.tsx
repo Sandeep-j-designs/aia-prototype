@@ -283,6 +283,10 @@ export const ColumnsButton = ({ onClick }: { onClick: () => void }) => (
   </button>
 );
 
+/** One underline tab, for screens that build their own TabsList. */
+export const UNDERLINE_TAB =
+  "gap-2 rounded-none border-b-2 border-transparent px-2.5 py-3 text-sm text-secondary-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-primary data-[state=active]:shadow-none";
+
 /** Underline tabs with a count chip, as the register draws them. */
 export const UnderlineTabs = ({
   tabs,
@@ -303,7 +307,7 @@ export const UnderlineTabs = ({
         <TabsTrigger
           key={entry.id}
           value={entry.id}
-          className="gap-2 rounded-none border-b-2 border-transparent px-2.5 py-3 text-sm text-secondary-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-primary data-[state=active]:shadow-none"
+          className={UNDERLINE_TAB}
         >
           {entry.label}
           <CountPill>{entry.count}</CountPill>

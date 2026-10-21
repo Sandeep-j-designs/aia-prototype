@@ -180,6 +180,7 @@ export type InvoiceLine = {
 } & PrintedLine;
 
 export type InboxInvoice = {
+  customerPoNo?: string;
   voucherNo: string;
   /** OUR invoice number. The vendor's equivalent is `supplierInvoiceNo`. */
   invoiceNo: string;
@@ -307,7 +308,30 @@ export type InboxLineage = {
 /** Where payment against a posted bill stands. */
 export type InboxPaymentStatus = "unpaid" | "partiallyPaid" | "paid";
 
+/**
+ * What Neo decided for a draft it entered in a batch, handed to the bill form
+ * with the document so the form shows the batch's answers rather than
+ * re-predicting them (Neo voucher entry).
+ */
+export type NeoPrepared = {
+  /** AP expense ledger id for the bill's ledger lines. */
+  ledgerId?: string;
+  /** Cost centre id for every line. */
+  costCentreId?: string;
+  narration?: string;
+  /** The vendor's services total this year before this bill. */
+  fyServices?: number;
+  /** A deduction the accountant confirmed not to make, with why. */
+  tdsExempt?: { section: string; reason: string };
+  /** GST the company pays itself (a GTA bill under RCM), at this rate. */
+  reverseChargeRate?: number;
+  /** The voucher's own date when it isn't the day of entry: a POS day. */
+  voucherDate?: string;
+};
+
 export type InboxItem = {
+  /** Set on drafts Neo entered in a batch. */
+  neo?: NeoPrepared;
   id: string;
   file: InboxFile;
   source: InboxSource;
@@ -394,4 +418,44 @@ export type RouteMeta = {
 
 export type ChannelMeta = {
   label: string;
+};
+
+
+/**
+ * Where one extracted value sits on the source document. Fractions of the page
+ * (0–1) from its top-left corner, as extraction services return a field's
+ * bounding box — independent of the size the page is drawn at.
+ */
+export type SourceRegion = {
+  /** 1-based. */
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+export type SourcePage = {
+  /** A rendered image of the page. */
+  image: string;
+  /** The page's natural size in CSS px; the regions scale against it. */
+  width: number;
+  height: number;
+};
+
+/**
+ * The document an inbox item was read from: its original file, its pages as
+ * images, and where every extracted value came from.
+ *
+ * Region keys are the extraction's field names: `seller.*` / `buyer.*` (name,
+ * gstin, address), `doc.*` (number, date, dueDate, placeOfSupply, poNo,
+ * narration), `totals.*` (taxable, cgst, sgst, igst, grand), `line.N` for a
+ * whole line and `line.N.*` (desc, hsn, qty, rate, amount; ledger, dr, cr on a
+ * journal) for its cells.
+ */
+export type SourceDocument = {
+  /** The original file. */
+  pdf: string;
+  pages: SourcePage[];
+  regions: Record<string, SourceRegion>;
 };

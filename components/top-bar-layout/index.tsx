@@ -13,6 +13,7 @@ import { BookOpen, ChevronDown, ChevronRight, MonitorPlay } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserCompany } from "@/types/pages/organisation";
 import OrganisationSwitcher from "./organization-switcher";
+import NeoLauncher from "@/components/neo/common/launcher";
 
 /**
  * `next/image` prefixes basePath itself for an optimised image, but not for an
@@ -25,7 +26,8 @@ import { basePath } from "@/lib/base-path";
 
 /** Bloocks TopNav styling with the prototype's company and sync actions. */
 
-export type Crumb = string;
+/** A plain label, or a control of its own, like Neo's chat title menu. */
+export type Crumb = string | { node: ReactNode; label: string };
 
 type Props = {
   crumbs?: Crumb[];
@@ -128,25 +130,30 @@ const AppTopBar = ({
               className="flex min-w-0 items-center gap-2 text-sm"
               aria-label="Breadcrumb"
             >
-              {crumbs.map((crumb, i) => (
-                <React.Fragment key={crumb}>
-                  {i > 0 ? (
-                    <ChevronRight className="h-3 w-3 flex-none text-surface-foreground-muted" />
-                  ) : null}
-                  {i === crumbs.length - 1 ? (
-                    <strong
-                      title={crumb}
-                      className="max-w-[360px] truncate font-semibold"
-                    >
-                      {crumb}
-                    </strong>
-                  ) : (
-                    <span className="text-surface-foreground-muted">
-                      {crumb}
-                    </span>
-                  )}
-                </React.Fragment>
-              ))}
+              {crumbs.map((crumb, i) => {
+                const label = typeof crumb === "string" ? crumb : crumb.label;
+                return (
+                  <React.Fragment key={`${i}-${label}`}>
+                    {i > 0 ? (
+                      <ChevronRight className="h-3 w-3 flex-none text-surface-foreground-muted" />
+                    ) : null}
+                    {typeof crumb !== "string" ? (
+                      <span className="min-w-0">{crumb.node}</span>
+                    ) : i === crumbs.length - 1 ? (
+                      <strong
+                        title={crumb}
+                        className="max-w-[360px] truncate font-semibold"
+                      >
+                        {crumb}
+                      </strong>
+                    ) : (
+                      <span className="text-surface-foreground-muted">
+                        {crumb}
+                      </span>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </nav>
           </>
         ) : null}
@@ -173,6 +180,8 @@ const AppTopBar = ({
         )}
 
         {companyAction}
+
+        <NeoLauncher />
 
         <span
           aria-hidden="true"

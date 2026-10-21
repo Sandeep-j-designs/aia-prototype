@@ -100,6 +100,7 @@ const subscribe = (listener: () => void) => {
   return () => listeners.delete(listener);
 };
 
+export const getGstState = read;
 export const useGstState = (company: string) =>
   useSyncExternalStore(
     subscribe,

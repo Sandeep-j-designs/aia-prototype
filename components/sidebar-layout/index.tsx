@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import AppTopBar, { type Crumb } from "@/components/top-bar-layout";
 import { cn } from "@/lib/utils";
+import { NeoStar } from "@/components/icons";
 import type { UserCompany } from "@/types/pages/organisation";
 
 /**
@@ -87,6 +88,9 @@ const NAV_MAIN = [
     icon: LayoutDashboard,
   },
   { id: "inbox", label: "Inbox", path: "/inbox", icon: Inbox },
+  // Neo is one place (ported from AIA 2.0): its own column carries Chat,
+  // Skills, Needs attention and Activity.
+  { id: "neo", label: "Neo", path: "/inbox?module=NEO", icon: NeoStar },
   {
     id: "purchases",
     label: "Purchases",

@@ -102,11 +102,21 @@ const PageTopBar = ({
   onBulkUpload: _onBulkUpload,
   bulkUploadIcon: _bulkUploadIcon,
   showExportButton,
+  leading,
   ...props
 }: PageTopBarProps) => {
   return (
     <div className={cn("flex justify-between items-center", className)}>
-      <PageHeader title={title} />
+      {/* With `leading` (Neo's pages: view tabs), the row carries the tabs and
+          the title is for assistive tech only. */}
+      {leading ? (
+        <>
+          <h1 className="sr-only">{title}</h1>
+          <div className="min-w-0">{leading}</div>
+        </>
+      ) : (
+        <PageHeader title={title} />
+      )}
       <QuickActions {...props} showExportButton={showExportButton} />
     </div>
   );

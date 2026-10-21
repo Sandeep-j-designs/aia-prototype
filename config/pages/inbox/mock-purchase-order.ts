@@ -1,0 +1,46 @@
+import type { InboxItem } from "@/types/pages/inbox";
+export const MOCK_CUSTOMER_PO: InboxItem = {
+  id: "PO-RELIANCE-1042",
+  vendor: "Reliance Retail Ltd",
+  customer: "Reliance Retail Ltd",
+  route: "AR",
+  voucherType: "Sales",
+  file: { name: "Reliance_PO_RRL-KA-2610-1042.pdf", size: "84 KB", ext: "pdf" },
+  source: {
+    channel: "whatsapp",
+    sender: "+91 98450 12342",
+    subject: "Customer PO RRL/KA/2610/1042 — sunflower oil tins",
+  },
+  ai: {
+    confidence: 1,
+    rationale: "Customer purchase order — raised as a draft sales invoice",
+  },
+  amount: 225750,
+  receivedAt: "2026-10-13T04:30:00Z",
+  status: "needs-review",
+  invoice: {
+    voucherNo: "SAL/26-27/0412",
+    invoiceNo: "SOR/26-27/0412",
+    customerPoNo: "RRL/KA/2610/1042",
+    invoiceDate: "13 Oct 2026",
+    dueDate: "12 Nov 2026",
+    gstReg: "Karnataka HQ",
+    costCentre: null,
+    customer: "Reliance Retail Ltd",
+    flagged: [],
+    items: [
+      {
+        desc: "Refined Sunflower Oil — 15 L Tin",
+        ledger: "Sales — Local (GST)",
+        amount: 215000,
+        hsn: "151219",
+        qty: 100,
+        unit: "Tin",
+        rate: 2150,
+      },
+    ],
+    taxes: { cgst: 5375, sgst: 5375 },
+    subTotal: 215000,
+    grandTotal: 225750,
+  },
+};

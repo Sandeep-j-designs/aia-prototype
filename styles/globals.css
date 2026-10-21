@@ -520,3 +520,96 @@ html {
 :root:not(.dark) {
   --destructive-foreground: 0 100% 34.7%;
 }
+
+/* ── NEO PORT ALIASES ──────────────────────────────────────────────────────
+   Neo was ported from AIA 2.0 (21 Oct 2026), which is built on Precision
+   Indigo tokens (--pi-*). This prototype keeps its own palette, so each
+   --pi-* name Neo uses is an alias onto a token already defined above: Neo
+   keeps its layout and class names and draws in this prototype's colours.
+   On handoff, replace each alias with the production token it points to. */
+:root {
+  --pi-page: var(--palette-blue-50);
+  --pi-surface-panel: var(--palette-neutral-0);
+  --pi-sunken: var(--palette-blue-50);
+  --pi-fill: var(--palette-neutral-50);
+  --pi-fill-2: var(--palette-neutral-100);
+  --pi-row-hover: var(--palette-blue-50);
+  --pi-head-bg: var(--palette-blue-50);
+  --pi-ink: var(--palette-neutral-900);
+  --pi-ink-2: var(--palette-neutral-800);
+  --pi-ink-3: var(--palette-neutral-500);
+  --pi-body: var(--palette-neutral-600);
+  --pi-faint: var(--palette-neutral-500);
+  --pi-line: var(--palette-neutral-50);
+  --pi-line-2: var(--palette-neutral-200);
+  --pi-line-strong: var(--palette-neutral-300);
+  --pi-rule-ledger: var(--palette-neutral-300);
+  --pi-brand: var(--palette-blue-500);
+  --pi-brand-hover: var(--palette-blue-600);
+  --pi-brand-active: var(--palette-blue-700);
+  --pi-brand-tint: var(--palette-blue-50);
+  --pi-brand-border: var(--palette-blue-200);
+  --pi-brand-vivid: var(--palette-blue-400);
+  --pi-btn-primary-edge: var(--palette-blue-400);
+  --pi-btn-fill: var(--palette-blue-500);
+  --pi-btn-fill-hover: var(--palette-blue-600);
+  --pi-btn-fill-active: var(--palette-blue-700);
+  --pi-success: var(--palette-green-700);
+  --pi-success-dot: var(--palette-green-500);
+  --pi-success-bg: var(--palette-green-50);
+  --pi-success-line: var(--palette-green-100);
+  --pi-warning: var(--palette-amber-800);
+  --pi-warning-dot: var(--palette-amber-500);
+  --pi-warning-bg: var(--palette-amber-50);
+  --pi-warning-line: var(--palette-amber-200);
+  --pi-danger: hsl(var(--destructive-foreground));
+  --pi-danger-dot: var(--palette-red-500);
+  --pi-danger-bg: var(--palette-red-50);
+  --pi-danger-line: var(--palette-red-100);
+  /* No AI hue in this palette: AI marks draw in the brand blue. */
+  --pi-ai-ink: var(--palette-blue-500);
+  --pi-teal: hsl(var(--surface-badge));
+  --pi-teal-strong: hsl(var(--surface-badge));
+  --pi-teal-tint: hsl(var(--surface-badge) / 0.1);
+  --pi-nav-top: var(--palette-blue-950);
+  --pi-nav-bottom: var(--palette-blue-950);
+
+  --font-display:
+    var(--font-family-display), "Open Sans", system-ui, sans-serif;
+  --font-mono:
+    var(--font-family-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --dur-fast: 150ms;
+  --dur-med: 250ms;
+  --ease-enter: cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --shadow-contact: 0 1px 2px rgba(20, 26, 60, 0.06);
+  --shadow-1: 0 2px 8px rgba(20, 26, 60, 0.09);
+  --shadow-2:
+    0 8px 24px rgba(20, 26, 60, 0.15), 0 2px 8px rgba(20, 26, 60, 0.07);
+  --shadow-table: 0 3px 16px -10px rgba(37, 57, 83, 0.19);
+}
+:root {
+  --radius-xs: 4px;
+  --inset-page: 24px;
+}
+@media (min-width: 1280px) {
+  :root {
+    --inset-page: 40px;
+  }
+}
+/* Neo's docked panel keeps toasts clear of itself, and marks the rows it is
+   working on, has done or is holding. */
+@media (min-width: 1440px) {
+  html[data-neo-open] [data-sonner-toaster][data-x-position="right"] {
+    right: calc(var(--neo-w, 24rem) + var(--offset-right, 24px)) !important;
+  }
+}
+[data-item-id][data-neo="working"] > td {
+  background: var(--pi-brand-tint) !important;
+}
+[data-item-id][data-neo="done"] > td:first-child {
+  box-shadow: inset 3px 0 0 var(--pi-success);
+}
+[data-item-id][data-neo="held"] > td:first-child {
+  box-shadow: inset 3px 0 0 var(--pi-warning);
+}

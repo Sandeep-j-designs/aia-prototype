@@ -1,0 +1,343 @@
+/* Use the workspace's actual width, including space reserved for Neo. */
+.review-toolbar-container {
+  container: review-toolbar / inline-size;
+}
+
+.review-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.review-toolbar-routing {
+  display: flex;
+  flex: 1;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.review-toolbar-reason {
+  min-width: 0;
+}
+
+.review-toolbar-routing > :not(.review-toolbar-reason) {
+  flex-shrink: 0;
+}
+
+html[data-neo-open] .review-toolbar-reason-text {
+  display: none;
+}
+
+html[data-neo-open] .review-toolbar-reason {
+  flex-shrink: 0;
+}
+
+.review-toolbar-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+@container review-toolbar (max-width: 1200px) {
+  .review-toolbar-origin {
+    display: none;
+  }
+}
+
+@container review-toolbar (max-width: 850px) {
+  .review-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .review-toolbar-actions {
+    justify-content: flex-end;
+  }
+}
+
+@container review-toolbar (max-width: 480px) {
+  .review-toolbar-routing {
+    flex-wrap: wrap;
+  }
+  .review-toolbar {
+    padding-inline: 12px;
+  }
+  .review-toolbar-document-label {
+    display: none;
+  }
+  .review-toolbar-actions {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .review-toolbar-routing [role="combobox"] {
+    max-width: calc(100cqi - 120px);
+    overflow: hidden;
+  }
+}
+
+.neo-panel {
+  isolation: isolate;
+}
+.neo-panel button {
+  overflow-wrap: anywhere;
+}
+
+/* The embedded review sheets have their own fixed toast stacks. Keep both
+   notification systems clear of Neo's composer, including in overlay mode. */
+html[data-neo-open] :is(.ap-sheet, .ar-sheet) .toasts,
+html[data-neo-open] [data-sonner-toaster][data-y-position="bottom"] {
+  bottom: 160px;
+}
+
+@media (min-width: 1440px) {
+  html[data-neo-open] :is(.ap-sheet, .ar-sheet) .toasts {
+    right: calc(var(--neo-w, 24rem) + 16px);
+    bottom: 16px;
+  }
+  html[data-neo-open] [data-sonner-toaster][data-y-position="bottom"] {
+    bottom: var(--offset-bottom, 24px);
+  }
+}
+
+/* Neo › Chat home (19 Oct 2026): a faint brand-tint wash behind the
+   greeting, fading out before the prompts. Empty state only. Toned down on
+   the chat redesign: the dots read as decoration. */
+.neo-home-wash {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 360px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, var(--pi-brand-tint), transparent);
+  opacity: 0.7;
+}
+
+/* ------------------------------------------------------------------------
+   Neo's reading voice (19 Oct 2026). Neo's answers are set in Source Serif 4,
+   apart from the UI's Open Sans, at a reading size and measure — the way the
+   chat apps give the assistant its own voice. Everything here is tokens.
+   ------------------------------------------------------------------------ */
+.neo-reading {
+  font-family: var(--font-family-reading);
+  font-optical-sizing: auto;
+}
+
+.neo-prose {
+  font-family: var(--font-family-reading);
+  font-optical-sizing: auto;
+  font-size: 16.5px;
+  line-height: 1.65;
+  color: var(--pi-ink);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.neo-panel .neo-prose {
+  font-size: 15.5px;
+  line-height: 1.6;
+}
+.neo-prose > :first-child {
+  margin-top: 0;
+}
+.neo-prose > :last-child {
+  margin-bottom: 0;
+}
+.neo-prose p,
+.neo-prose ul,
+.neo-prose ol,
+.neo-prose blockquote {
+  margin: 0 0 0.85em;
+}
+.neo-prose strong {
+  font-weight: 600;
+  color: var(--pi-ink);
+}
+.neo-prose em {
+  font-style: italic;
+}
+.neo-prose h1,
+.neo-prose h2,
+.neo-prose h3,
+.neo-prose h4 {
+  font-family: var(--font-family-primary);
+  font-weight: 600;
+  color: var(--pi-ink);
+  letter-spacing: 0;
+  margin: 1.4em 0 0.5em;
+}
+.neo-prose h1,
+.neo-prose h2 {
+  font-size: 18px;
+  line-height: 28px;
+}
+.neo-prose h3,
+.neo-prose h4 {
+  font-size: 15px;
+  line-height: 24px;
+}
+.neo-prose ul,
+.neo-prose ol {
+  padding-left: 1.4em;
+}
+.neo-prose ul {
+  list-style: disc;
+}
+.neo-prose ol {
+  list-style: decimal;
+}
+.neo-prose li {
+  margin: 0.1em 0;
+  padding-left: 0.2em;
+}
+.neo-prose li::marker {
+  color: var(--pi-faint);
+}
+.neo-prose a:not(.neo-cite) {
+  color: var(--pi-brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.neo-prose code {
+  font-family: var(--font-family-mono);
+  font-size: 0.82em;
+  background: var(--pi-fill);
+  border-radius: var(--radius-xs, 4px);
+  padding: 0.1em 0.35em;
+}
+.neo-prose blockquote {
+  border-left: 2px solid var(--pi-line-2);
+  padding-left: 1em;
+  color: var(--pi-body);
+}
+.neo-prose hr {
+  border: 0;
+  border-top: 1px solid var(--pi-line);
+  margin: 1.5em 0;
+}
+
+/* Tables in an answer: UI face, figures right-aligned in tabular numerals,
+   rows ruled, header on the head strip. */
+.neo-prose .neo-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-family-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+.neo-prose .neo-table th {
+  background: var(--pi-head-bg);
+  color: var(--pi-body);
+  font-weight: 500;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+.neo-prose .neo-table th,
+.neo-prose .neo-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--pi-line);
+}
+/* Cells break between words, never inside one; a wide table scrolls. */
+.neo-prose .neo-table td {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.neo-prose .neo-table td:first-child,
+.neo-prose .neo-table td:last-child {
+  white-space: nowrap;
+}
+.neo-prose .neo-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.neo-prose .neo-table [data-num] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Working: the star breathes, the status line shimmers. */
+@keyframes neo-breathe {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.82) rotate(45deg);
+    opacity: 0.7;
+  }
+}
+.neo-breathe {
+  animation: neo-breathe 1.6s ease-in-out infinite;
+  transform-origin: center;
+}
+@keyframes neo-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+.neo-shimmer {
+  background: linear-gradient(
+      90deg,
+      var(--pi-body) 0%,
+      var(--pi-body) 40%,
+      var(--pi-ink) 50%,
+      var(--pi-body) 60%,
+      var(--pi-body) 100%
+    )
+    0 0 / 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: neo-shimmer 2.2s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .neo-breathe,
+  .neo-shimmer {
+    animation: none;
+  }
+  .neo-shimmer {
+    color: var(--pi-body);
+    background: none;
+  }
+}
+
+/* A document in the canvas keeps its card chrome but drops the thread's
+   narrow-measure caps. */
+.neo-canvas > div > * {
+  max-width: none;
+}
+
+/* Small laptops (20 Oct 2026): 1366 and 1280 wide are the norm for our
+   users, so Neo's reading face steps down a size below 1440px and the
+   answer keeps more of the screen. */
+@media (max-width: 1439px) {
+  .neo-prose {
+    font-size: 15.5px;
+    line-height: 1.6;
+  }
+  .neo-panel .neo-prose {
+    font-size: 14.5px;
+    line-height: 1.55;
+  }
+}
+
+/* Neo's fields inside this prototype (Neo port, 21 Oct 2026). The global
+   input rules here shrink every placeholder to 12px and tint fields blue on
+   hover; Neo's composer and its card fields keep AIA 2.0's reading: the
+   placeholder at the field's own size, no hover tint. */
+:is(.neo-scope, #neo-composer) :is(input, textarea)::placeholder,
+#neo-composer::placeholder {
+  font-size: inherit;
+  line-height: inherit;
+  color: var(--pi-faint);
+}
+#neo-composer,
+#neo-composer:hover,
+.neo-scope textarea:hover {
+  background-color: transparent;
+}

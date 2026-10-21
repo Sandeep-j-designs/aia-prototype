@@ -5,6 +5,16 @@ import {
   COMPLEX_POSTED_BILL,
 } from "@/config/pages/inbox/mock-inbox";
 import type { InboxItem } from "@/types/pages/inbox";
+import { mockAutoApprovalBills } from "@/config/pages/inbox/mock-trust";
+import { AI_DOCUMENTS } from "@/config/pages/inbox/mock-ai-documents";
+import { MOCK_CUSTOMER_PO } from "@/config/pages/inbox/mock-purchase-order";
+import { runComplianceChecks } from "@/hooks/pages/inbox/use-compliance";
+import { logActivity } from "@/hooks/pages/inbox/use-activity";
+import {
+  judge,
+  recordApproval,
+  revokeTrust,
+} from "@/hooks/pages/inbox/use-auto-approve";
 import type { UserCompany } from "@/types/pages/organisation";
 import {
   AR_FIELD_DEFAULTS,
@@ -80,6 +90,18 @@ export const SEED_COMPANIES: Company[] = [
     state: "Maharashtra",
     tool: "tally",
   },
+  {
+    // A restaurant with two outlets in Bengaluru, selling at the counter and
+    // through Zomato, Swiggy and Ownly: the three-way reconciliation client
+    // (20 Oct 2026). Its September lives in config/pages/neo/mock-recon.ts.
+    id: "nandhini",
+    name: "Nandhini Deluxe",
+    slug: "nandhini-deluxe",
+    branches: ["JP Nagar", "Koramangala"],
+    gstin: "29AADCN5532H1ZD",
+    state: "Karnataka",
+    tool: "tally",
+  },
 ];
 export const actor = "Sandeep Balaji";
 export type Form = {
@@ -121,6 +143,14 @@ export type Form = {
   extra?: Record<string, string>;
 };
 export type Item = {
+  /** Entered by Neo in a batch, under this instruction (Neo voucher entry). */
+  batch?: { id: string; instruction: string };
+  preparedBy?: {
+    agent: "Neo";
+    runId: string;
+    onBehalfOf: string;
+    fromId?: string;
+  };
   id: string;
   company: string;
   status: Status;
@@ -192,8 +222,21 @@ export type Item = {
    * flag, so a reload mid-switch still knows when it ends.
    */
   routeSwitch?: { from: Route; to: Route; startedAt: number; until: number };
+  /**
+   * Approved by the AI on its own, because the bill met a trusted vendor +
+   * ledger pattern (Automation › Rules & learning › Auto-approve). `activity`
+   * is the log entry Undo reverses; until the voucher reaches Tally, Undo puts
+   * the bill back in Needs Review.
+   */
+  autoApproved?: { evidence: string; at: string; activity?: string };
+  /**
+   * From a trusted vendor, but it did not meet the evidence (an amount far off
+   * the usual), so it was held for a person. The reason says why.
+   */
+  autoHold?: { reason: string; at: string };
   retries: number;
   error?: string;
+  collectionFailure?: boolean;
   firstAttempt: boolean;
   extractionResult?: Pick<
     Item,
@@ -229,6 +272,8 @@ type State = {
   /** Which first-visit story the prototype is telling. See `Scenario`. */
   scenario?: Scenario;
   queue: string[];
+  /** Where the review queue was opened from, so Back returns there (set by Neo). */
+  queueFrom?: string;
   emailSuffix: Record<string, string>;
   waCompany: string;
   /**
@@ -324,23 +369,31 @@ export const blankArSheet = (): ArInvoiceState => ({
   taxes: [],
   fields: { ...AR_FIELD_DEFAULTS },
 });
-function seed(): State {
-  const fromMock = (x: InboxItem, n: number): Item => {
-    const route = (x.route || "AP") as Route;
-    const b = x.bill;
-    /*
-      An AR item is ONE sales invoice we issued (PRD §4.5.4), and it seeds from
-      its own extraction exactly the way a bill does.
+/** One mock document read into the Inbox's shape, as seeding does it. */
+export const itemFromMock = (x: InboxItem, n: number): Item => {
+  const route = (x.route || "AP") as Route;
+  const b = x.bill;
+  /*
+    An AR item is ONE sales invoice we issued (PRD §4.5.4), and it seeds from
+    its own extraction exactly the way a bill does.
 
-      It used to seed from `x.ar.rows[0]` — the first row of a sales REGISTER,
-      a spreadsheet standing for a thousand separate invoices. That took a
-      1,000-row, ₹1.47cr workbook and made an Inbox row reading ₹8,000 against
-      whichever customer happened to sit on line one, discarded the other 999,
-      and would have posted a single voucher for the lot. Registers are a
-      different unit of work; they are not in v2 (PRD §8).
-    */
-    const inv = x.invoice;
-    const lines = b?.items.map((l) => ({
+    It used to seed from `x.ar.rows[0]` — the first row of a sales REGISTER,
+    a spreadsheet standing for a thousand separate invoices. That took a
+    1,000-row, ₹1.47cr workbook and made an Inbox row reading ₹8,000 against
+    whichever customer happened to sit on line one, discarded the other 999,
+    and would have posted a single voucher for the lot. Registers are a
+    different unit of work; they are not in v2 (PRD §8).
+  */
+  const inv = x.invoice;
+  const lines = b?.items.map((l) => ({
+    description: l.desc,
+    ledger: l.ledger,
+    amount: l.amount,
+    dr: l.amount,
+    cr: 0,
+    costCentre: l.costCentre || "",
+  })) ||
+    inv?.items.map((l) => ({
       description: l.desc,
       ledger: l.ledger,
       amount: l.amount,
@@ -348,155 +401,149 @@ function seed(): State {
       cr: 0,
       costCentre: "",
     })) ||
-      inv?.items.map((l) => ({
-        description: l.desc,
-        ledger: l.ledger,
-        amount: l.amount,
-        dr: l.amount,
+    x.jv?.lines.map((l) => ({
+      description: "",
+      ledger: l.ledger,
+      amount: l.dr || l.cr || 0,
+      dr: l.dr || 0,
+      cr: l.cr || 0,
+      costCentre: "",
+    })) || [
+      {
+        description: "Service invoice",
+        ledger: route === "AR" ? "Sales" : "General Expenses",
+        amount: x.amount || 0,
+        dr: x.amount || 0,
         cr: 0,
         costCentre: "",
-      })) ||
-      x.jv?.lines.map((l) => ({
-        description: "",
-        ledger: l.ledger,
-        amount: l.dr || l.cr || 0,
-        dr: l.dr || 0,
-        cr: l.cr || 0,
-        costCentre: "",
-      })) || [
-        {
-          description: "Service invoice",
-          ledger: route === "AR" ? "Sales" : "General Expenses",
-          amount: x.amount || 0,
-          dr: x.amount || 0,
-          cr: 0,
-          costCentre: "",
-        },
-      ];
-    const net = lines.reduce((s, l) => s + l.amount, 0);
-    // A sales invoice carries output GST the same way a bill carries input GST,
-    // so both sides read their own tax block. Neither is recomputed here: the
-    // figures come off the document, and the totals panel says so.
-    const taxBlock = b?.taxes || inv?.taxes;
-    const taxes = b?.taxLedgers
-      ? b.taxLedgers.reduce((s, l) => s + l.amount, 0)
-      : taxBlock
-        ? Object.values(taxBlock).reduce((s, v) => s + (v || 0), 0)
-        : 0;
-    // TDS comes off what is payable; rounding goes on. RCM is our own
-    // liability, not the vendor's dues, so it stays out of the amount.
-    const tds = (b?.tds || []).reduce((s, l) => s + l.amount, 0);
-    const adjustments = (b?.adjustments || []).reduce(
-      (s, l) => s + l.amount,
-      0
-    );
-    const f: Form = {
-      gst: "Karnataka HQ",
-      voucherType:
-        route === "JV"
-          ? "Journal"
-          : route === "AR"
-            ? "Sales"
-            : x.voucherType || "Purchase",
-      voucherNo: b?.voucherNo || inv?.voucherNo || `${route}-${n + 101}`,
-      // Whose number this is depends on which way the invoice points: the
-      // vendor's on a bill, ours on a sales invoice.
-      invoiceNo: b?.supplierInvoiceNo || inv?.invoiceNo || x.id,
-      date: date(b?.billDate || inv?.invoiceDate || "2026-09-10"),
-      due: date(b?.dueDate || inv?.dueDate || "2026-10-10"),
-      // The counterparty, named from the side the document is read from — a
-      // vendor billed us, we billed a customer.
-      party:
-        route === "AR"
-          ? inv?.customer || x.customer || "Customer"
-          : x.vendor && x.vendor !== "—"
-            ? x.vendor
-            : x.customer || "General counterparty",
-      costClass: b?.costCentreClass || "",
-      costCentre: b?.costCentre || inv?.costCentre || "",
-      costClassEnabled: !!b?.costCentreClass,
-      narration: x.jv?.narration || x.source.subject || "",
-      lines,
-    };
-    // Upload templates start unapproved. The default demo scenario adds a
-    // small set of posted examples separately, in seedFor().
-    const status: Status =
-      x.status === "deleted"
-        ? "Deleted"
-        : x.status === "failed"
-          ? "Failed"
-          : ["extracting", "retrying"].includes(x.status)
-            ? "Extracting"
-            : x.status.startsWith("duplicate")
-              ? "Duplicate"
-              : "Needs Review";
-    return {
-      id: x.id,
-      company: "shakun",
-      status,
-      route,
-      aiRoute: route,
-      topChoice: route,
-      confidence: x.ai.confidence || 0.85,
-      reason:
-        route === "AR"
-          ? "Your company is the seller on this invoice."
-          : route === "JV"
-            ? "This counterparty has previously been booked through Journal."
-            : "Your company is the buyer on this vendor invoice.",
-      source: x.source.channel === "drive" ? "upload" : x.source.channel,
-      sender:
-        x.source.channel === "upload" || x.source.channel === "drive"
-          ? actor
-          : x.source.sender,
-      subject: x.source.subject,
-      routingAddress: "shakunthalam@inbox.aiaccountant.app",
-      file: { ...x.file },
-      received: x.receivedAt,
-      form: f,
-      amount:
-        route === "JV"
-          ? lines.reduce((s, l) => s + l.dr, 0)
-          : Math.round((net + taxes - tds + adjustments) * 100) / 100,
-      original: x,
-      edited: [],
-      hardRef: x.status === "duplicate-hard" ? "POSTED-2041" : undefined,
-      softRef:
-        x.status === "duplicate-soft" || x.status === "duplicate-cross-type"
-          ? "POSTED-FILE-100"
-          : undefined,
-      retries: 0,
-      firstAttempt: true,
-      // A sales invoice opens on its own tables, seeded from what extraction
-      // read off the document — each item line becomes a row in Item Details,
-      // and the tax block becomes the Taxes table.
-      ...(route === "AR"
-        ? {
-            arSheet: {
-              ...blankArSheet(),
-              salesLedger: inv?.items[0]?.ledger || "Sales",
-              items: (inv?.items || []).map((l) => ({
-                ...blankArItem(),
-                description: l.desc,
-                quantity: 1,
-                unitRate: l.amount,
-                amount: l.amount,
-              })),
-              ledgers: [blankArLedger()],
-              taxes: Object.entries(inv?.taxes || {})
-                .filter(([, v]) => !!v)
-                .map(([key, value]) => ({
-                  id: arRowId(),
-                  ledger: `Output ${key.toUpperCase()}`,
-                  costCentre: "",
-                  amount: value as number,
-                })),
-            },
-          }
-        : {}),
-      // Approval snapshots are added by the demo scenario or by approving.
-    };
+      },
+    ];
+  const net = lines.reduce((s, l) => s + l.amount, 0);
+  // A sales invoice carries output GST the same way a bill carries input GST,
+  // so both sides read their own tax block. Neither is recomputed here: the
+  // figures come off the document, and the totals panel says so.
+  const taxBlock = b?.taxes || inv?.taxes;
+  const taxes = b?.taxLedgers
+    ? b.taxLedgers.reduce((s, l) => s + l.amount, 0)
+    : taxBlock
+      ? Object.values(taxBlock).reduce((s, v) => s + (v || 0), 0)
+      : 0;
+  // TDS comes off what is payable; rounding goes on. RCM is our own
+  // liability, not the vendor's dues, so it stays out of the amount.
+  const tds = (b?.tds || []).reduce((s, l) => s + l.amount, 0);
+  const adjustments = (b?.adjustments || []).reduce(
+    (s, l) => s + l.amount,
+    0
+  );
+  const f: Form = {
+    gst: "Karnataka HQ",
+    voucherType:
+      route === "JV"
+        ? "Journal"
+        : route === "AR"
+          ? "Sales"
+          : x.voucherType || "Purchase",
+    voucherNo: b?.voucherNo || inv?.voucherNo || `${route}-${n + 101}`,
+    // Whose number this is depends on which way the invoice points: the
+    // vendor's on a bill, ours on a sales invoice.
+    invoiceNo: b?.supplierInvoiceNo || inv?.invoiceNo || x.id,
+    date: date(b?.billDate || inv?.invoiceDate || "2026-09-10"),
+    due: date(b?.dueDate || inv?.dueDate || "2026-10-10"),
+    // The counterparty, named from the side the document is read from — a
+    // vendor billed us, we billed a customer.
+    party:
+      route === "AR"
+        ? inv?.customer || x.customer || "Customer"
+        : x.vendor && x.vendor !== "—"
+          ? x.vendor
+          : x.customer || "General counterparty",
+    costClass: b?.costCentreClass || "",
+    costCentre: b?.costCentre || inv?.costCentre || "",
+    costClassEnabled: !!b?.costCentreClass,
+    narration: x.jv?.narration || x.source.subject || "",
+    lines,
   };
+  // Upload templates start unapproved. The default demo scenario adds a
+  // small set of posted examples separately, in seedFor().
+  const status: Status =
+    x.status === "deleted"
+      ? "Deleted"
+      : x.status === "failed"
+        ? "Failed"
+        : ["extracting", "retrying"].includes(x.status)
+          ? "Extracting"
+          : x.status.startsWith("duplicate")
+            ? "Duplicate"
+            : "Needs Review";
+  return {
+    id: x.id,
+    company: "shakun",
+    status,
+    route,
+    aiRoute: route,
+    topChoice: route,
+    confidence: x.ai.confidence || 0.85,
+    reason:
+      route === "AR"
+        ? "Your company is the seller on this invoice."
+        : route === "JV"
+          ? "This counterparty has previously been booked through Journal."
+          : "Your company is the buyer on this vendor invoice.",
+    source: x.source.channel === "drive" ? "upload" : x.source.channel,
+    sender:
+      x.source.channel === "upload" || x.source.channel === "drive"
+        ? actor
+        : x.source.sender,
+    subject: x.source.subject,
+    routingAddress: "shakunthalam@inbox.aiaccountant.app",
+    file: { ...x.file },
+    received: x.receivedAt,
+    form: f,
+    amount:
+      route === "JV"
+        ? lines.reduce((s, l) => s + l.dr, 0)
+        : Math.round((net + taxes - tds + adjustments) * 100) / 100,
+    original: x,
+    edited: [],
+    hardRef: x.status === "duplicate-hard" ? "POSTED-2041" : undefined,
+    softRef:
+      x.status === "duplicate-soft" || x.status === "duplicate-cross-type"
+        ? "POSTED-FILE-100"
+        : undefined,
+    retries: 0,
+    firstAttempt: true,
+    // A sales invoice opens on its own tables, seeded from what extraction
+    // read off the document — each item line becomes a row in Item Details,
+    // and the tax block becomes the Taxes table.
+    ...(route === "AR"
+      ? {
+          arSheet: {
+            ...blankArSheet(),
+            salesLedger: inv?.items[0]?.ledger || "Sales",
+            items: (inv?.items || []).map((l) => ({
+              ...blankArItem(),
+              description: l.desc,
+              quantity: 1,
+              unitRate: l.amount,
+              amount: l.amount,
+            })),
+            ledgers: [blankArLedger()],
+            taxes: Object.entries(inv?.taxes || {})
+              .filter(([, v]) => !!v)
+              .map(([key, value]) => ({
+                id: arRowId(),
+                ledger: `Output ${key.toUpperCase()}`,
+                costCentre: "",
+                amount: value as number,
+              })),
+          },
+        }
+      : {}),
+    // Approval snapshots are added by the demo scenario or by approving.
+  };
+};
+function seed(): State {
+  const fromMock = itemFromMock;
   const items: Item[] = MOCK_INBOX_ITEMS.filter(
     (x) => x.route !== "Banking" && !x.lineage
   ).map(fromMock);
@@ -664,6 +711,47 @@ function withWhatsAppBacklog(base: State, company: string): State {
   };
 }
 
+/**
+ * Shakunthalam's overnight bills from trusted vendors (13 Oct 2026, Automation
+ * › Auto-approve): three met their pattern's evidence and were approved by
+ * the AI on its own; one, a ₹47,200 Airtel equipment charge against a usual
+ * ₹4,720, was held for a person. Added after the WhatsApp backlog so they keep
+ * their own channel (Airtel and Zoho email their bills).
+ *
+ * Only in the WhatsApp story: a brand-new Inbox has received nothing, so
+ * nothing could have been approved on its own.
+ */
+function withAutoApprovals(base: State): State {
+  const now = Date.now();
+  const extra = mockAutoApprovalBills().map(
+    ({ bill, outcome, minutesAgo }, n): Item => {
+      const item = itemFromMock(bill, 900 + n);
+      const at = new Date(now - minutesAgo * 60_000).toISOString();
+      const verdict = judge(
+        "shakun",
+        item.form.party,
+        item.form.lines.map((l) => l.ledger),
+        item.amount
+      );
+      if (outcome === "approved" && verdict?.ok)
+        return {
+          ...item,
+          status: "Approved",
+          snapshot: structuredClone(item.form),
+          doneAt: at,
+          doneBy: "Neo · Auto-approve",
+          autoApproved: { evidence: verdict.evidence, at },
+        };
+      return {
+        ...item,
+        autoHold:
+          verdict && !verdict.ok ? { reason: verdict.reason, at } : undefined,
+      };
+    }
+  );
+  return { ...base, items: [...extra, ...base.items] };
+}
+
 /** A fresh prototype state, told as the given first-visit story. */
 function seedFor(scenario: Scenario): State {
   const base = { ...seed(), scenario };
@@ -691,7 +779,9 @@ function seedFor(scenario: Scenario): State {
           }
         : item
     );
-    return withWhatsAppBacklog(base, base.waCompany);
+    return withAiDocuments(
+      withAutoApprovals(withWhatsAppBacklog(base, base.waCompany))
+    );
   }
   // A new user has received nothing: the queue starts empty everywhere, and
   // only the books (posted vouchers) are there. The seeded queue lives on as
@@ -702,6 +792,35 @@ function seedFor(scenario: Scenario): State {
   };
 }
 
+function withAiDocuments(base: State): State {
+  // DEV: GET /api/inbox returns these records with company scope and approval state.
+  const items = AI_DOCUMENTS.map(({ company, item: mock, approved }, n) => {
+    const item = itemFromMock(mock, 1100 + n);
+    item.company = company;
+    item.form.gst = company === "acme" ? "Pune HQ" : "Karnataka HQ";
+    if (approved) {
+      item.status = "Approved";
+      item.snapshot = structuredClone(item.form);
+      item.arSnapshot = item.arSheet
+        ? structuredClone(item.arSheet)
+        : undefined;
+      item.doneBy = "Priya Raghavan";
+    }
+    return item;
+  });
+  const po = itemFromMock(MOCK_CUSTOMER_PO, 1500);
+  po.reason = "Customer purchase order — raised as a draft sales invoice";
+  po.form.narration =
+    "Customer PO RRL/KA/2610/1042 · Sales — Local (GST) from coding history";
+  po.preparedBy = { agent: "Neo", runId: "po-intake", onBehalfOf: actor };
+  return {
+    ...base,
+    startedCompanies: [
+      ...new Set([...(base.startedCompanies || []), "shakun", "acme"]),
+    ],
+    items: [po, ...items, ...base.items],
+  };
+}
 let state: State = seed();
 const server = state;
 let loaded = false;
@@ -791,6 +910,7 @@ export function init() {
     localStorage.removeItem("inbox.date-normalization.v2");
   } catch {}
   state = seedFor(readScenario());
+  logSeededActivity();
   listeners.forEach((f) => f());
   state.items
     .filter((x) => ["Received", "Extracting"].includes(x.status))
@@ -807,6 +927,12 @@ export function useStore() {
   );
 }
 export const getState = () => state;
+export const subscribeStore = (listener: () => void) => {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+};
 
 /**
  * The top bar's view of an organisation — production's `UserCompany`, which
@@ -1189,6 +1315,8 @@ export function approve(id: string) {
       attachment: item.file.blobId || item.file.name,
     }
   );
+  recordPersonApproval(next);
+  runComplianceChecks(next.company, next.id);
   persist();
   return "";
 }
@@ -1285,6 +1413,20 @@ export function setRoute(id: string, route: Route) {
     original_ai_route: x.aiRoute,
     new_route: route,
     ai_route_confidence: x.confidence,
+  });
+  logActivity({
+    company: x.company,
+    actor: { kind: "person", name: actor },
+    kind: "override",
+    module: "Inbox",
+    action: "Changed the book",
+    subject: subjectOf(x),
+    ref: { kind: "document", id },
+    change: { from: MODULE_OF[x.route], to: MODULE_OF[route] },
+    reason:
+      route !== x.aiRoute
+        ? `The AI had sent it to ${MODULE_OF[x.aiRoute]}`
+        : undefined,
   });
   persist();
 }
@@ -1429,6 +1571,7 @@ export function scheduleExtraction(id: string) {
           items: state.items.map((item) => (item.id === id ? completed : item)),
         };
         event("Inbox Extraction Completed", completed);
+        tryAutoApprove(id);
         return;
       }
       if (y.file.name.toLowerCase().includes("fail")) {
@@ -1477,6 +1620,7 @@ export function scheduleExtraction(id: string) {
           duplicate_kind: "file_hash",
           matched_item_id: ref.id,
         });
+      tryAutoApprove(id);
       persist();
     }, x.extractionDelay || 1200);
   }, 600);
@@ -1484,6 +1628,18 @@ export function scheduleExtraction(id: string) {
 export function retry(id: string) {
   const x = state.items.find((x) => x.id === id);
   if (!x) return;
+  if (x.collectionFailure) {
+    update(
+      id,
+      {
+        retries: x.retries + 1,
+        error:
+          "The same source attachment is still unreadable. Ask Neo for a clearer copy.",
+      },
+      "Source extraction retried"
+    );
+    return;
+  }
   update(
     id,
     { status: "Received", retries: x.retries + 1, firstAttempt: false },
@@ -1625,7 +1781,26 @@ export function updatePosted(
   patch: Partial<Item>,
   name = "Approved Voucher Edited"
 ) {
+  const before = state.items.find((x) => x.id === id);
   update(id, patch, name, false, true);
+  // An auto-approved bill a person had to correct: the pattern it was
+  // trusted on was wrong this time, so it stops being trusted.
+  if (before?.autoApproved && patch.form) {
+    const ledger = before.form.lines[0]?.ledger || "";
+    revokeTrust(
+      before.company,
+      before.form.party,
+      ledger,
+      `Edited after auto-approval on ${subjectOf(before)}`
+    );
+    update(
+      id,
+      { autoApproved: undefined, doneBy: actor },
+      "Inbox Auto-approval Corrected",
+      true,
+      true
+    );
+  }
 }
 
 /**
@@ -2060,6 +2235,7 @@ export function applyScenario(scenario: Scenario) {
     company: state.company,
     companies: state.companies,
   };
+  logSeededActivity();
   persist();
   state.items
     .filter((x) => ["Received", "Extracting"].includes(x.status))
@@ -2300,4 +2476,512 @@ export function applyBulkAction(
   });
   persist();
   return result;
+}
+
+/* ----------------------------------------------- activity and auto-approve */
+
+/** The book a route posts to, as the activity log names it. */
+const MODULE_OF: Record<Route, "Purchases" | "Sales" | "Journals"> = {
+  AP: "Purchases",
+  AR: "Sales",
+  JV: "Journals",
+};
+
+/** "Bharti Airtel Ltd · BLR/2610/44871": a record as the log names it. */
+const subjectOf = (item: Item) =>
+  [item.form.party, item.form.invoiceNo].filter(Boolean).join(" · ") ||
+  item.file.name;
+
+/** The ledgers the AI read off the document, before anyone touched them. */
+export const predictedLedgers = (item: Item) =>
+  (
+    item.original.bill?.items ||
+    item.original.invoice?.items ||
+    item.original.jv?.lines ||
+    []
+  ).map((l) => l.ledger);
+
+const distinct = (list: string[]) => Array.from(new Set(list.filter(Boolean)));
+
+/** Seeded documents the activity mock already describes. */
+const DESCRIBED = new Set(["INB-2041", "INB-2051", "INB-2031"]);
+const logged = new Set<string>();
+
+/**
+ * Give every seeded document its history: what the AI decided when it read
+ * it, and what Auto-approve did. Without this a seeded document's History
+ * would open empty, as if nobody had looked at it.
+ *
+ * DEV: prototype-only. Production's log is written by the actions themselves.
+ */
+function logSeededActivity() {
+  const after = (iso: string, minutes: number) =>
+    new Date(+new Date(iso) + minutes * 60_000).toISOString();
+  state.items.forEach((item) => {
+    if (item.priorVoucher || item.created) return;
+    if (["Received", "Extracting", "Failed", "Deleted"].includes(item.status))
+      return;
+    const key = `${item.company}:${item.id}`;
+    if (logged.has(key)) return;
+    logged.add(key);
+    const ref = { kind: "document" as const, id: item.id };
+    const module = MODULE_OF[item.route];
+    const subject = subjectOf(item);
+    logActivity({
+      company: item.company,
+      at: after(item.received, 1),
+      actor: { kind: "ai", name: "Neo · Document reading" },
+      kind: "predicted",
+      module,
+      action: `Sent to ${module}`,
+      subject,
+      ref,
+      reason: item.reason,
+    });
+    if (!DESCRIBED.has(item.id) && item.route !== "JV")
+      distinct(predictedLedgers(item)).forEach((ledger) =>
+        logActivity({
+          company: item.company,
+          at: after(item.received, 2),
+          actor: { kind: "ai", name: "Neo · Bill reading" },
+          kind: "predicted",
+          module,
+          action: "Predicted ledger",
+          subject,
+          ref,
+          reason: item.original.ai.rationale
+            ? `${ledger}: ${item.original.ai.rationale}`
+            : `${ledger}, from the lines on the document`,
+        })
+      );
+    if (item.status === "Duplicate" && !DESCRIBED.has(item.id))
+      logActivity({
+        company: item.company,
+        at: after(item.received, 2),
+        actor: { kind: "ai", name: "Neo · Duplicate check" },
+        kind: "blocked",
+        module: "Inbox",
+        action: "Held as duplicate",
+        subject,
+        ref,
+        reason: item.hardRef
+          ? "Same vendor and invoice number as a voucher already in the books"
+          : "The same file was received before",
+      });
+    if (item.autoApproved) logAutoApproval(item);
+    if (item.autoHold)
+      logActivity({
+        company: item.company,
+        at: item.autoHold.at,
+        actor: { kind: "ai", name: "Neo · Auto-approve" },
+        kind: "held",
+        module,
+        action: "Held for review",
+        subject,
+        ref,
+        reason: item.autoHold.reason,
+      });
+  });
+}
+
+/** Log an auto-approval with its Undo, and keep the entry's id on the item. */
+function logAutoApproval(item: Item) {
+  if (!item.autoApproved) return;
+  const entry = logActivity(
+    {
+      company: item.company,
+      at: item.autoApproved.at,
+      actor: { kind: "ai", name: "Neo · Auto-approve" },
+      kind: "auto-approved",
+      module: MODULE_OF[item.route],
+      action: "Auto-approved",
+      subject: subjectOf(item),
+      ref: { kind: "document", id: item.id },
+      reason: item.autoApproved.evidence,
+      undoable: true,
+    },
+    () => undoAutoApprove(item.id)
+  );
+  state = {
+    ...state,
+    items: state.items.map((x) =>
+      x.id === item.id && x.autoApproved
+        ? { ...x, autoApproved: { ...x.autoApproved, activity: entry.id } }
+        : x
+    ),
+  };
+}
+
+/**
+ * Put an auto-approved bill back in Needs Review. Only before it reaches
+ * Tally — the caller checks the sync state; the log closes the entry.
+ *
+ * DEV: POST /api/inbox/:id/undo-auto-approve
+ */
+export function undoAutoApprove(id: string) {
+  const x = state.items.find((item) => item.id === id);
+  if (!x || x.status !== "Approved" || !x.autoApproved) return;
+  update(
+    id,
+    {
+      status: "Needs Review",
+      autoApproved: undefined,
+      snapshot: undefined,
+      doneAt: undefined,
+      doneBy: undefined,
+    },
+    "Inbox Auto-approve Undone",
+    true,
+    true
+  );
+}
+
+/**
+ * A freshly read bill meets a trusted pattern: approve it on the AI's own
+ * authority, or hold it with the reason it fell short. Anything that fails
+ * the ordinary checks (`issue`) or is a duplicate stays where it is.
+ */
+function tryAutoApprove(id: string) {
+  const item = state.items.find((x) => x.id === id);
+  if (!item || item.status !== "Needs Review" || item.route !== "AP") return;
+  const verdict = judge(
+    item.company,
+    item.form.party,
+    item.form.lines.map((l) => l.ledger),
+    item.amount
+  );
+  if (!verdict) return;
+  const at = new Date().toISOString();
+  if (!verdict.ok) {
+    state = {
+      ...state,
+      items: state.items.map((x) =>
+        x.id === id ? { ...x, autoHold: { reason: verdict.reason, at } } : x
+      ),
+    };
+    logActivity({
+      company: item.company,
+      actor: { kind: "ai", name: "Neo · Auto-approve" },
+      kind: "held",
+      module: MODULE_OF[item.route],
+      action: "Held for review",
+      subject: subjectOf(item),
+      ref: { kind: "document", id },
+      reason: verdict.reason,
+    });
+    return;
+  }
+  if (issue(item)) return;
+  const next: Item = {
+    ...item,
+    status: "Approved",
+    snapshot: structuredClone(item.form),
+    doneAt: at,
+    doneBy: "Neo · Auto-approve",
+    autoApproved: { evidence: verdict.evidence, at },
+  };
+  state = { ...state, items: state.items.map((x) => (x.id === id ? next : x)) };
+  event("Inbox Item Auto-approved", next, { evidence: verdict.evidence });
+  logAutoApproval(next);
+}
+
+/** A person approved a document: log it, and feed the vendor's evidence. */
+function recordPersonApproval(item: Item) {
+  const module = MODULE_OF[item.route];
+  const subject = subjectOf(item);
+  const ref = { kind: "document" as const, id: item.id };
+  const before = distinct(predictedLedgers(item));
+  const after = distinct(item.form.lines.map((l) => l.ledger));
+  const changed =
+    item.route !== "JV" &&
+    before.length > 0 &&
+    before.join("|") !== after.join("|");
+  if (changed)
+    logActivity({
+      company: item.company,
+      actor: { kind: "person", name: actor },
+      kind: "override",
+      module,
+      action: "Changed ledger",
+      subject,
+      ref,
+      change: { from: before.join(", "), to: after.join(", ") },
+    });
+  logActivity({
+    company: item.company,
+    actor: { kind: "person", name: actor },
+    kind: "approved",
+    module,
+    action: "Approved",
+    subject,
+    ref,
+  });
+  if (item.route !== "JV" && after.length === 1)
+    recordApproval(
+      item.company,
+      item.form.party,
+      after[0],
+      item.amount,
+      changed
+        ? `Ledger changed from ${before.join(", ")} to ${after[0]}`
+        : undefined
+    );
+}
+
+/**
+ * Add a document Neo prepared. It enters where any document waiting for a
+ * person does — Needs Review — because Neo prepares and never approves.
+ *
+ * DEV: POST /api/inbox/items with `prepared_by`; the backend writes the edit
+ * log entry naming the agent and the user it acted for.
+ */
+export function neoCreate(item: Item, runId: string, fromId?: string) {
+  return createDraft(item, runId, fromId);
+}
+
+/**
+ * Add a draft a person started from a screen (a provision schedule, a
+ * compliance fix). It is credited to them, not to Neo: the rule that built it
+ * is evidence, not an author. `preparedBy` is only for work Neo ran.
+ */
+export function personCreate(item: Item, runId: string, fromId?: string) {
+  return createDraft(item, runId, fromId, actor);
+}
+
+function createDraft(
+  item: Item,
+  runId: string,
+  fromId?: string,
+  person?: string
+) {
+  if (!state.permissions.includes(item.route))
+    throw new Error("You do not have access to create this voucher type.");
+  if (state.items.some((x) => x.id === item.id))
+    throw new Error("This draft already exists.");
+  if (
+    fromId &&
+    !state.items.some(
+      (x) =>
+        x.id === fromId && x.company === state.company && x.status !== "Deleted"
+    )
+  )
+    throw new Error("The source is unavailable in this company.");
+  const next: Item = {
+    ...item,
+    company: state.company,
+    status: "Needs Review",
+    preparedBy: person
+      ? undefined
+      : { agent: "Neo", runId, onBehalfOf: actor, fromId },
+  };
+  // A draft is an arrival: a company that had nothing sent yet now has its
+  // Inbox started, or the queue's empty kickstart would hide the draft.
+  state = {
+    ...state,
+    startedCompanies: [
+      ...new Set([...(state.startedCompanies || []), next.company]),
+    ],
+    items: [next, ...state.items],
+  };
+  event(person ? "Draft Created" : "Neo Draft Created", next, {
+    agent: person ? undefined : "Neo",
+    on_behalf_of: actor,
+    run_id: runId,
+    route: next.route,
+    prepared_from: fromId,
+  });
+  logActivity(
+    {
+      company: next.company,
+      actor: person
+        ? { kind: "person", name: person }
+        : { kind: "ai", name: "Neo" },
+      kind: person ? "override" : "predicted",
+      module: "Inbox",
+      action: "Prepared draft",
+      subject: next.form.voucherNo,
+      ref: { kind: "document", id: next.id },
+      reason: next.reason,
+      undoable: true,
+    },
+    () => {
+      const result = neoDiscard([next], runId);
+      if (!result.reversed.length)
+        throw new Error(
+          "The draft has changed or been approved; it cannot be undone."
+        );
+    }
+  );
+  return next;
+}
+
+/** Ingestion failures remain documents, not invented zero-value vouchers. */
+export function sourceFailure(item: Item, runId: string) {
+  const existing = state.items.find((x) => x.id === item.id);
+  if (existing) return existing;
+  const failed: Item = {
+    ...item,
+    company: state.company,
+    status: "Failed",
+    amount: 0,
+    collectionFailure: true,
+    error: "Unreadable source attachment. Request a clearer copy.",
+    form: { ...item.form, lines: [] },
+  };
+  state = { ...state, items: [failed, ...state.items] };
+  neoLog("Source extraction failed", runId, failed, { reason: failed.error });
+  return failed;
+}
+
+export function neoReplaceFailed(item: Item, runId: string) {
+  const existing = state.items.find(
+    (x) => x.id === item.id && x.company === state.company
+  );
+  if (!existing || existing.status !== "Failed")
+    throw new Error(
+      "The failed document has changed; review it before replacing."
+    );
+  if (!state.permissions.includes(item.route))
+    throw new Error("You do not have access to prepare this voucher.");
+  const next: Item = {
+    ...item,
+    company: state.company,
+    status: "Needs Review",
+    preparedBy: { agent: "Neo", runId, onBehalfOf: actor },
+  };
+  state = {
+    ...state,
+    items: state.items.map((x) => (x.id === next.id ? next : x)),
+  };
+  neoLog("Prepared clearer replacement", runId, next, {
+    reason:
+      "Replaced unreadable attachment after a simulated supplier reply; awaiting review.",
+  });
+  return next;
+}
+
+/**
+ * Undo for a Neo run: take out what it created. Only drafts go — anything
+ * someone has approved since is a posted record, and stays.
+ *
+ * DEV: DELETE /api/neo/runs/:id/changes.
+ */
+export function neoDiscard(created: Item[], runId: string) {
+  const ids = created.map((x) => x.id);
+  const removed = state.items
+    .filter(
+      (x) =>
+        x.preparedBy?.runId === runId &&
+        x.company === state.company &&
+        x.status === "Needs Review" &&
+        created.some(
+          (before) =>
+            before.id === x.id && JSON.stringify(before) === JSON.stringify(x)
+        )
+    )
+    .map((x) => x.id);
+  state = {
+    ...state,
+    items: state.items.filter((x) => !removed.includes(x.id)),
+  };
+  event("Neo Run Undone", undefined, {
+    agent: "Neo",
+    run_id: runId,
+    removed,
+  });
+  for (const item of created.filter((x) => removed.includes(x.id)))
+    neoLog("Neo Draft Removed", runId, item);
+  return {
+    reversed: removed,
+    skipped: ids.filter((id) => !removed.includes(id)),
+  };
+}
+
+/**
+ * Undo for a Neo run that edited documents: put each back as it was before
+ * the run touched it. Approved records are skipped for the same reason as
+ * above.
+ */
+export function neoRestore(snapshots: Item[], runId: string, expected: Item[]) {
+  const byId = new Map(snapshots.map((x) => [x.id, x]));
+  const restored: string[] = [];
+  state = {
+    ...state,
+    items: state.items.map((x) => {
+      const before = byId.get(x.id);
+      const after = expected.find((item) => item.id === x.id);
+      if (
+        !before ||
+        !after ||
+        x.company !== state.company ||
+        x.status === "Approved" ||
+        JSON.stringify(x) !== JSON.stringify(after)
+      )
+        return x;
+      restored.push(x.id);
+      return structuredClone(before);
+    }),
+  };
+  event("Neo Run Undone", undefined, {
+    agent: "Neo",
+    run_id: runId,
+    restored,
+  });
+  for (const item of snapshots.filter((x) => restored.includes(x.id)))
+    neoLog("Neo Draft Restored", runId, item);
+  return {
+    reversed: restored,
+    skipped: snapshots.filter((x) => !restored.includes(x.id)).map((x) => x.id),
+  };
+}
+
+/** Capture the accepted write now, so Undo cannot overwrite a later edit. */
+export function neoUndoChanges(snapshots: Item[], runId: string) {
+  snapshots = snapshots.filter((before) => {
+    const current = state.items.find((x) => x.id === before.id);
+    return (
+      current &&
+      current.company === state.company &&
+      current.status !== "Approved" &&
+      JSON.stringify(current) !== JSON.stringify(before)
+    );
+  });
+  state = {
+    ...state,
+    items: state.items.map((x) =>
+      snapshots.some((s) => s.id === x.id) && x.status !== "Approved"
+        ? { ...x, preparedBy: { agent: "Neo", runId, onBehalfOf: actor } }
+        : x
+    ),
+  };
+  const expected = structuredClone(
+    state.items.filter((x) => snapshots.some((s) => s.id === x.id))
+  );
+  for (const item of expected) neoLog("Neo Draft Changed", runId, item);
+  return () => neoRestore(snapshots, runId, expected);
+}
+
+/** Log an agent action that changed nothing in the books, e.g. a message. */
+export function neoLog(
+  name: string,
+  runId: string,
+  item?: Item,
+  properties: Record<string, unknown> = {}
+) {
+  logActivity({
+    company: item?.company || state.company,
+    actor: { kind: "ai", name: "Neo" },
+    kind: "predicted",
+    module: "Automation",
+    action: name,
+    subject: item?.form.voucherNo || runId,
+    ref: item ? { kind: "document", id: item.id } : undefined,
+    reason: String(properties.reason || "Scripted task requested by the user"),
+  });
+  event(name, item, {
+    agent: "Neo",
+    on_behalf_of: actor,
+    run_id: runId,
+    ...properties,
+  });
 }

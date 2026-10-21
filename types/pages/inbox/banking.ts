@@ -140,6 +140,15 @@ export interface BankTransaction {
   companyGstLabel: string;
   companyGstUuid: string;
   voucherNo?: string | null;
+  /**
+   * PROTOTYPE (13 Oct 2026): the invoices or bills this line was matched to,
+   * and the one-line account of it ("SPW/26-27/118 · TDS ₹10,000 (194C)").
+   * Production returns the linked bill allocations on the transaction.
+   */
+  matchedDocuments?: string[];
+  matchNote?: string;
+  /** The bank rule that coded this line, by id. */
+  ruleId?: string;
 }
 
 /** A Tally ledger the Ledger picker offers, under its group. */

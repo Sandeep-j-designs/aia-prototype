@@ -43,15 +43,18 @@ export function RecordBanner({
   children,
   action,
   label,
+  icon,
 }: {
   tone: "success" | "warning";
   title: string;
   children: React.ReactNode;
   action?: React.ReactNode;
   label: string;
+  /** Overrides the tone's icon (Neo's chase banner draws a message). */
+  icon?: React.ElementType;
 }) {
   const success = tone === "success";
-  const Icon = success ? Check : Copy;
+  const Icon = icon || (success ? Check : Copy);
   return (
     <section
       aria-label={title}

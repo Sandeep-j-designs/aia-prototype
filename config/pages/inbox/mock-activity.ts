@@ -1,0 +1,143 @@
+import type { ActivityEntry } from "@/types/pages/inbox/automation";
+
+/**
+ * The activity log as the prototype opens it: what the AI and the team did
+ * in each book over the last few days.
+ *
+ * Times are relative to load ("40 minutes ago"), so the log always reads as
+ * recent whenever the demo is run. Features add to it as they act — see
+ * `logActivity` in hooks/pages/inbox/use-activity.ts.
+ *
+ * DEV: GET /api/activity?companyUuid=…&from=…&actor=ai|person returns these.
+ */
+const ago = (minutes: number) =>
+  new Date(Date.now() - minutes * 60_000).toISOString();
+
+export const MOCK_ACTIVITY: ActivityEntry[] = [
+  {
+    id: "act-001",
+    company: "shakun",
+    at: ago(18),
+    actor: { kind: "ai", name: "Neo · Bill reading" },
+    kind: "predicted",
+    module: "Purchases",
+    action: "Predicted ledger",
+    subject: "Dell India Pvt Ltd · DIPL/KA/26-27/18842",
+    ref: { kind: "document", id: "INB-2041" },
+    reason: "Purchase — Capital Goods: 2 laptops at ₹71,350 each, HSN 8471",
+  },
+  {
+    id: "act-002",
+    company: "shakun",
+    at: ago(26),
+    actor: { kind: "ai", name: "Neo · Duplicate check" },
+    kind: "blocked",
+    module: "Inbox",
+    action: "Held as duplicate",
+    subject: "Dell India Pvt Ltd · DIPL/KA/26-27/18842",
+    ref: { kind: "document", id: "INB-2051" },
+    reason: "Same vendor and invoice number as INB-2041",
+  },
+  {
+    id: "act-003",
+    company: "shakun",
+    at: ago(64),
+    actor: { kind: "person", name: "Priya Raghavan" },
+    kind: "override",
+    module: "Purchases",
+    action: "Changed cost centre",
+    subject: "Blue Dart Express Ltd · BLR/2627/0091187",
+    ref: { kind: "document", id: "BULK-002" },
+    change: { from: "Plant", to: "Head Office" },
+  },
+  {
+    id: "act-004",
+    company: "shakun",
+    at: ago(95),
+    actor: { kind: "ai", name: "Neo · Bank matching" },
+    kind: "matched",
+    module: "Banking",
+    action: "Suggested a match",
+    subject: "HDFC Bank · NEFT-HOTEL MAYURA-HRC/26-27/0104",
+    reason: "Amount and invoice number in the narration match HRC/26-27/0104",
+  },
+  {
+    id: "act-005",
+    company: "shakun",
+    at: ago(60 * 3),
+    actor: { kind: "person", name: "Priya Raghavan" },
+    kind: "approved",
+    module: "Purchases",
+    action: "Approved",
+    subject: "Bengaluru Industrial Gases · BIG/2627/1184",
+    ref: { kind: "document", id: "INB-2030" },
+  },
+  {
+    id: "act-006",
+    company: "shakun",
+    at: ago(60 * 3 + 5),
+    actor: { kind: "person", name: "Priya Raghavan" },
+    kind: "override",
+    module: "Purchases",
+    action: "Changed ledger",
+    subject: "Bengaluru Industrial Gases · BIG/2627/1184",
+    ref: { kind: "document", id: "INB-2030" },
+    change: { from: "Consumables", to: "Stores & Spares" },
+    reason: "Oxygen cylinders for the boiler are stores, not lab consumables",
+  },
+  {
+    id: "act-007",
+    company: "shakun",
+    at: ago(60 * 20),
+    actor: { kind: "person", name: "Sandeep Balaji" },
+    kind: "synced",
+    module: "Sync",
+    action: "Synced to Tally",
+    subject: "14 vouchers · Purchases and Sales",
+  },
+  {
+    id: "act-008",
+    company: "shakun",
+    at: ago(60 * 26),
+    actor: { kind: "ai", name: "Neo · Bill reading" },
+    kind: "predicted",
+    module: "Sales",
+    action: "Predicted income ledger",
+    subject: "Mysore Traders · MT/26-27/0061",
+    ref: { kind: "document", id: "INB-2031" },
+    reason: "Sales — Refined Oil: 9 of 9 past invoices to Mysore Traders",
+  },
+  {
+    id: "act-011",
+    company: "shakun",
+    at: "2026-08-28T05:44:10.000Z",
+    actor: { kind: "ai", name: "Neo · Tally history" },
+    kind: "learned",
+    module: "Automation",
+    action: "Learned from Tally history",
+    subject: "6,240 vouchers · Apr 2025 – Aug 2026",
+    reason:
+      "Coding patterns for 164 vendors, read-only; nothing written to Tally",
+  },
+  {
+    id: "act-009",
+    company: "acme",
+    at: ago(40),
+    actor: { kind: "person", name: "Priya Raghavan" },
+    kind: "approved",
+    module: "Purchases",
+    action: "Approved",
+    subject: "Mahindra Logistics Ltd · MLL/PNQ/2627/5531",
+  },
+  {
+    id: "act-010",
+    company: "acme",
+    at: ago(60 * 5),
+    actor: { kind: "ai", name: "Neo · Bill reading" },
+    kind: "predicted",
+    module: "Purchases",
+    action: "Predicted ledger",
+    subject: "Mahindra Logistics Ltd · MLL/PNQ/2627/5531",
+    reason: "Freight Inward: 38 of 40 past Mahindra Logistics bills",
+  },
+];

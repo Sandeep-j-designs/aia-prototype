@@ -173,6 +173,50 @@ export const gstinFor = (stateCode: string, pan: string) => {
   return body + GSTIN_CHARS[(36 - (sum % 36)) % 36];
 };
 
+// Fictitious, checksum-valid identities for the Phase 2/3 demo cast.
+Object.assign(MOCK_PARTIES, {
+  "Sri Balaji Packaging": {
+    gstin: gstinFor("29", "AAAFS7342J"),
+    address: "Plot 18, KIADB, Davanagere, Karnataka 577005",
+  },
+  "Harihar Transport Co": {
+    gstin: gstinFor("29", "AAAFH7362J"),
+    address: "Transport Nagar, Harihar, Karnataka 577601",
+  },
+  "Kirloskar Brothers Ltd": {
+    gstin: gstinFor("29", "AAACK7342J"),
+    address: "Peenya Industrial Estate, Bengaluru, Karnataka 560058",
+  },
+  "Mahindra Logistics Ltd": {
+    gstin: gstinFor("27", "AAACM7342J"),
+    address: "Chakan Industrial Area, Pune, Maharashtra 410501",
+  },
+  "Bharat Forge Ltd": {
+    gstin: gstinFor("27", "AAACB7342J"),
+    address: "Mundhwa Industrial Area, Pune, Maharashtra 411036",
+  },
+  "Tata Motors Ltd": {
+    gstin: gstinFor("27", "AAACT7342J"),
+    address: "Pimpri Industrial Area, Pune, Maharashtra 411018",
+  },
+  "Kirloskar Oil Engines Ltd": {
+    gstin: gstinFor("27", "AAACK7352J"),
+    address: "Khadki, Pune, Maharashtra 411003",
+  },
+  "Reliance Retail Ltd": {
+    gstin: gstinFor("29", "AAACR7342J"),
+    address: "Whitefield, Bengaluru, Karnataka 560066",
+  },
+  // Neo voucher entry: the Harihar batch's two vendors not yet in masters.
+  "VRL Logistics Ltd": {
+    gstin: gstinFor("29", "AABCV3609C"),
+    address: "Giriraj Annexe, Circuit House Road, Hubballi, Karnataka 580029",
+  },
+  "KPR Cargo Movers": {
+    gstin: gstinFor("29", "AAKFK2231M"),
+    address: "No. 42, Lorry Stand Road, Harihar, Karnataka 577601",
+  },
+});
 /** The tenant's own registration, keyed by the prototype's company id. */
 export const MOCK_OWN_REGISTRATION: Record<
   string,

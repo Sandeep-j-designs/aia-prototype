@@ -1,16 +1,21 @@
 import { useMemo, useSyncExternalStore } from "react";
+import { MOCK_BANK_BALANCES } from "@/config/pages/inbox/mock-bank-balances";
+import { notificationActions } from "@/hooks/pages/notifications/use-notifications";
 import {
   EXTRACTED_ROWS,
   VOUCHER_TYPE_LABEL,
+  buildStatement,
   buildTransaction,
   gstRegistrationsOf,
   seedFor,
 } from "@/config/pages/inbox/mock-banking";
+import { hasWords } from "@/utils/pages/inbox/bank-text";
 import type {
   BankAccountType,
   BankLedgerData,
   BankTransaction,
   Statement,
+  TallyVoucherPaymentType,
 } from "@/types/pages/inbox/banking";
 
 /**
@@ -90,6 +95,10 @@ const patchTransactions = (
     ),
   });
 
+export const getBankingState = read;
+// DEV: GET /api/dashboard/overview/cash-on-accounts?companyUuid=… supplies statement closing balances.
+export const bankBalances = (company: string) =>
+  MOCK_BANK_BALANCES.filter((b) => b.company === company);
 export const bankingActions = {
   /** DEV: PATCH /api/bank/inline-edit?companyId=…&bankLineUuid=… */
   updateTransaction: (
@@ -107,6 +116,93 @@ export const bankingActions = {
     uuids: string[],
     change: Partial<BankTransaction>
   ) => patchTransactions(company, uuids, () => change),
+
+  /**
+   * Code the lines a new bank rule covers now: untouched lines (no type, no
+   * ledger, not yet ready) whose narration carries the rule's words. They
+   * are the AI's work, cited to the rule, and still wait for a review.
+   * Returns the lines coded.
+   *
+   * DEV: server-side, on POST /api/bank/rules.
+   */
+  applyRule: (
+    company: string,
+    rule: {
+      id: string;
+      contains: string;
+      type: TallyVoucherPaymentType;
+      ledger: string;
+    }
+  ) => {
+    const hits = read(company).transactions.filter(
+      (t) =>
+        !t.accoutingReady &&
+        t.thirdPartySyncStatus === "not_synced" &&
+        !t.paymentType &&
+        !t.ledgersNameList.length &&
+        hasWords(t.description, rule.contains)
+    );
+    patchTransactions(
+      company,
+      hits.map((t) => t.bankLineUuid),
+      () => ({
+        paymentType: rule.type,
+        ledgersNameList: [rule.ledger],
+        ledgersUuidList: [`led-${rule.ledger}`],
+        categorisedBy: "ai",
+        ruleId: rule.id,
+      })
+    );
+    return hits;
+  },
+
+  /**
+   * A statement read elsewhere (Neo's reconciliation) lands here: the file
+   * in Statement Logs, and only the rows Banking doesn't hold yet (DUP-01:
+   * same date, narration, amount and side). Returns how many were new.
+   * DEV: POST /api/statements/upload, then the extraction's rows.
+   */
+  importStatement: (
+    company: string,
+    ledgerId: string,
+    fileName: string,
+    from: string,
+    to: string,
+    rows: { date: string; narration: string; amount: number; side: "D" | "C" }[]
+  ) => {
+    const have = read(company).transactions;
+    const fresh = rows.filter(
+      (r) =>
+        !have.some(
+          (t) =>
+            t.bankAccountUuid === ledgerId &&
+            t.transactionDate === r.date &&
+            t.description === r.narration &&
+            Math.abs(Number(t.transactionAmountLc) - r.amount) < 0.005
+        )
+    );
+    write(company, {
+      statements: [
+        buildStatement(ledgerId, fileName, from, to, {
+          fileMetadata: {
+            noOfDuplicates: rows.length - fresh.length,
+            noOfLinesExtracted: rows.length,
+          },
+        }),
+        ...read(company).statements.filter((s) => s.fileName !== fileName),
+      ],
+      transactions: [
+        ...have,
+        ...fresh.map((r) =>
+          buildTransaction(ledgerId, [r.date, r.narration, r.amount, r.side, "n"])
+        ),
+      ],
+    });
+    return { fresh: fresh.length, duplicate: rows.length - fresh.length };
+  },
+
+  /** Every line for the company, for code outside a component. */
+  transactionsOf: (company: string) => read(company).transactions,
 
   /** DEV: PATCH /api/transactions/bank/toggle-accounting-ready */
   setAccountingReady: (company: string, uuids: string[], ready: boolean) =>
