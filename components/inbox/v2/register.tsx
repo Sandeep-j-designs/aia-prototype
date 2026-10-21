@@ -676,7 +676,7 @@ const Register = ({
         />
       ) : (
         <>
-          <div className="min-h-0 flex-1 overflow-auto border-t border-neutral-gray">
+          <div className="min-h-0 flex-1 overflow-auto overscroll-none border-t border-neutral-gray">
             {/* Hairline column rules, as on the bills register — every
                 page-level table gets them (decided 7 Oct). This register had
                 been left with row rules only. Nothing here is pinned, so no

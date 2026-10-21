@@ -2,14 +2,18 @@ import React, { useEffect, useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
+  FileText,
   Maximize2,
   Minimize2,
   Pencil,
   Trash2,
   X,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
 import { cn } from "@/lib/utils";
 import JournalVoucher from "@/components/inbox/journal";
 import { Item, getState, updatePosted } from "./store";
@@ -17,7 +21,14 @@ import { ApprovedDetails } from "./record-details";
 import Sheet from "./sheet";
 import InvoiceSheet from "./invoice-sheet";
 import SyncCloud from "./sync/sync-cloud";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import Preview from "./preview";
+import { DocumentSplitHandle } from "./ui";
 import s from "./record-panel.module.css";
 
 type Props = {
@@ -68,6 +79,54 @@ const ToolButton = ({
 );
 
 /**
+ * The record's source file, named beside the voucher it was read from so it
+ * is always plain that there is one. It is also the switch for the document
+ * pane: docked, it opens the record at full width with the document beside
+ * it; expanded, it shows or hides the document. A voucher raised by hand
+ * says it has none.
+ */
+const SourceButton = ({
+  file,
+  open,
+  onClick,
+}: {
+  file?: Item["file"];
+  open: boolean;
+  onClick: () => void;
+}) =>
+  file ? (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-pressed={open}
+            aria-label={`Source document: ${file.name}`}
+            onClick={onClick}
+            className={s.source}
+          >
+            <FileText size={15} aria-hidden />
+            <span className={s.sourceName}>{file.name}</span>
+          </button>
+        </TooltipTrigger>
+        {/* The pill gives up its name as the header narrows; the whole of
+            it is always one hover away. */}
+        <TooltipContent side="bottom" align="start" className="max-w-[360px]">
+          <p className="break-words font-semibold">{file.name}</p>
+          <p className="text-secondary-foreground">
+            {[file.ext?.toUpperCase(), file.size].filter(Boolean).join(" · ")}
+          </p>
+          <p className="mt-1">
+            {open ? "Hide the document" : "View it beside the record"}
+          </p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  ) : (
+    <span className={s.noSource}>No source document</span>
+  );
+
+/**
  * An approved record, docked beside the table it was opened from — the table
  * stays where it was, narrowed, with this row lit. The toolbar sits on the
  * panel's grey ground and the voucher on a sheet above it, so the controls
@@ -105,7 +164,26 @@ const RecordPanel = ({
   const editing = !!before;
   // A voucher raised by hand has nothing behind it to show.
   const hasDocument = !!item.file.name && !item.created;
-  const showDocument = expanded && editing && hasDocument;
+  /*
+    Seeing the source is not editing it: reading, the document is its own
+    switch, held as the user steps from voucher to voucher. Editing at full
+    width it is always there to check against, unless put away for that
+    edit; afterwards the reading choice comes back. Docked, there is no room
+    for paper and form side by side.
+  */
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [hiddenInEdit, setHiddenInEdit] = useState(false);
+  const showDocument =
+    expanded && hasDocument && (editing ? !hiddenInEdit : sourceOpen);
+  const toggleSource = () => {
+    if (!expanded) {
+      setExpanded(true);
+      setSourceOpen(true);
+    } else setSourceOpen((on) => !on);
+  };
+  const hideSource = () =>
+    editing ? setHiddenInEdit(true) : setSourceOpen(false);
+  const endEdit = () => setBefore(null);
   /*
     The sheet engine keeps its own copy of the bill. Edit marks it, and Cancel
     asks for it back in place — not a remount, which would blank the sheet
@@ -127,6 +205,7 @@ const RecordPanel = ({
   const startEdit = () => {
     if (!inPanel) return onEdit();
     tellSheet("checkpoint");
+    setHiddenInEdit(false);
     setBefore(
       structuredClone({
         form: item.form,
@@ -139,7 +218,7 @@ const RecordPanel = ({
     if (!before) return;
     updatePosted(item.id, before, "Approved Voucher Edit Cancelled");
     tellSheet("restore");
-    setBefore(null);
+    endEdit();
   };
   const saveEdit = () => {
     if (!before) return;
@@ -148,7 +227,7 @@ const RecordPanel = ({
       !!now &&
       (JSON.stringify(now.form) !== JSON.stringify(before.form) ||
         now.amount !== before.amount);
-    setBefore(null);
+    endEdit();
     if (changed) onEdited(item.id);
   };
   const at = items.findIndex((x) => x.id === item.id);
@@ -185,6 +264,88 @@ const RecordPanel = ({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  const source = (
+    <SourceButton
+      file={hasDocument ? item.file : undefined}
+      open={showDocument}
+      onClick={toggleSource}
+    />
+  );
+
+  const formContent = journal ? (
+    /*
+      The journal reads through its edit form too. `readOnly` would swap in
+      different markup (no blank lines, plain allocation text), so the form
+      always renders editable and the read skin does the rest; edits only
+      land while Edit is open.
+    */
+    <div
+      className={cn(
+        s.form,
+        s.journalForm,
+        editing ? s.editingForm : s.reading
+      )}
+    >
+      <header className={s.journalHead}>
+        <h1 className={s.recordTitle}>{item.form.voucherNo || "Journal"}</h1>
+        {source}
+        <span className={s.recordAmount}>
+          <span className={s.recordAmountLabel}>Grand total</span>
+          {new Intl.NumberFormat("en-IN", {
+            style: "currency",
+            currency: "INR",
+          }).format(item.amount)}
+        </span>
+      </header>
+      <JournalVoucher
+        item={item}
+        attempted={false}
+        readOnly={false}
+        onEdit={(patch) => {
+          if (!editing) return;
+          updatePosted(item.id, {
+            form: { ...item.form, ...patch },
+          });
+        }}
+      />
+    </div>
+  ) : inPanel ? (
+    <div className={cn(s.form, editing ? s.editingForm : s.reading)}>
+      {/* The record's name, where the form keeps its mode tabs. */}
+      <header className={s.recordHead} aria-hidden={editing}>
+        <h1 className={s.recordTitle}>
+          {item.form.voucherNo || item.form.party}
+        </h1>
+        {source}
+        <span className={s.recordAmount}>
+          <span className={s.recordAmountLabel}>Grand total</span>
+          {new Intl.NumberFormat("en-IN", {
+            style: "currency",
+            currency: "INR",
+          }).format(item.amount)}
+        </span>
+      </header>
+      {item.route === "AR" ? (
+        <InvoiceSheet
+          item={item}
+          allowEdits={editing}
+          onApproved={() => {}}
+          onReady={() => {}}
+        />
+      ) : (
+        <Sheet
+          item={item}
+          noDocument
+          allowEdits={editing}
+          onApproved={() => {}}
+          onReady={() => {}}
+        />
+      )}
+    </div>
+  ) : (
+    <ApprovedDetails item={item} company={company} />
+  );
 
   return (
     <aside
@@ -277,103 +438,45 @@ const RecordPanel = ({
         </div>
       )}
       {/*
-        Expanded and editing, a record read off a document gets the document
-        beside it — the way the full editor reviews one. The column opens
-        from nothing as Edit is pressed and closes again on Cancel or Save,
-        so the form narrows and widens in place rather than being replaced.
+        The source document sits beside the record, reading or editing — the
+        resizable split the review screen gives AR and the journal. AP's sheet
+        runs without its own document pane here so every route shares this
+        one. The record's panel keeps its place in the tree whether or not the
+        document is there, so opening it never reboots the sheet.
       */}
-      <div className={cn(s.split, showDocument && s.withDocument)}>
-        <div className={s.documentPane} aria-hidden={!showDocument}>
-          {hasDocument && expanded && (
+      <ResizablePanelGroup direction="horizontal" className={s.split}>
+        {showDocument && (
+          <ResizablePanel
+            id="document"
+            order={1}
+            defaultSize={50}
+            minSize={18}
+            className={s.documentPane}
+          >
             <div className={s.documentInner}>
-              <Preview item={item} />
+              <Preview item={item} onHide={hideSource} />
             </div>
-          )}
-        </div>
-        {/* Keyed so each voucher opens at its top, not where the last one was
-          left. */}
-        <div key={item.id} className={s.scroll}>
-          <div className={s.sheet}>
-            {journal ? (
-              /*
-              The journal reads through its edit form too. `readOnly` would
-              swap in different markup (no blank lines, plain allocation
-              text), so the form always renders editable and the read skin
-              does the rest; edits only land while Edit is open.
-            */
-              <div
-                className={cn(
-                  s.form,
-                  s.journalForm,
-                  editing ? s.editingForm : s.reading
-                )}
-              >
-                <header className={s.journalHead}>
-                  <h1 className={s.recordTitle}>
-                    {item.form.voucherNo || "Journal"}
-                  </h1>
-                  <Badge color="positive" size="md">
-                    Approved
-                  </Badge>
-                  <span className={s.recordAmount}>
-                    {new Intl.NumberFormat("en-IN", {
-                      style: "currency",
-                      currency: "INR",
-                    }).format(item.amount)}
-                  </span>
-                </header>
-                <JournalVoucher
-                  item={item}
-                  attempted={false}
-                  readOnly={false}
-                  onEdit={(patch) => {
-                    if (!editing) return;
-                    updatePosted(item.id, {
-                      form: { ...item.form, ...patch },
-                    });
-                  }}
-                />
-              </div>
-            ) : inPanel ? (
-              <div className={cn(s.form, editing ? s.editingForm : s.reading)}>
-                {/* The record's name, where the form keeps its mode tabs. */}
-                <header className={s.recordHead} aria-hidden={editing}>
-                  <h1 className={s.recordTitle}>
-                    {item.form.voucherNo || item.form.party}
-                  </h1>
-                  <Badge color="positive" size="md">
-                    Approved
-                  </Badge>
-                  <span className={s.recordAmount}>
-                    {new Intl.NumberFormat("en-IN", {
-                      style: "currency",
-                      currency: "INR",
-                    }).format(item.amount)}
-                  </span>
-                </header>
-                {item.route === "AR" ? (
-                  <InvoiceSheet
-                    item={item}
-                    allowEdits={editing}
-                    onApproved={() => {}}
-                    onReady={() => {}}
-                  />
-                ) : (
-                  <Sheet
-                    item={item}
-                    noDocument
-                    allowEdits={editing}
-                    onApproved={() => {}}
-                    onReady={() => {}}
-                  />
-                )}
-              </div>
-            ) : (
-              <ApprovedDetails item={item} company={company} />
-            )}
+          </ResizablePanel>
+        )}
+        {showDocument && <DocumentSplitHandle />}
+        {/* Panel forces its own overflow:hidden (to stay measurable while
+            dragging) and isn't a flex container, so .scroll's flex:1 has
+            nothing to fill — it needs its own height spelled out here to
+            actually clip and scroll instead of growing past the panel. */}
+        <ResizablePanel
+          id="record"
+          order={2}
+          defaultSize={50}
+          minSize={40}
+          className="min-w-0"
+        >
+          {/* Keyed so each voucher opens at its top, not where the last one
+              was left. */}
+          <div key={item.id} className={cn(s.scroll, "h-full")}>
+            <div className={s.sheet}>{formContent}</div>
           </div>
-        </div>
-      </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </aside>
   );
 };

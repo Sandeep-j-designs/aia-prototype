@@ -70,6 +70,7 @@ import {
   additionalPreviewColumns,
 } from "@/config/pages/inbox/sales-upload";
 import { useColumnResize } from "@/hooks/pages/inbox/use-column-resize";
+import { useFieldConfig } from "@/hooks/pages/inbox/use-field-config";
 import {
   salesUpload,
   type SalesBatchEntry,
@@ -80,6 +81,7 @@ import {
   type PreviewColumnKey,
   type ResponseARVoucherImportPreviewRow,
 } from "@/types/pages/inbox/sales-upload";
+import { owedConditionalKeys } from "@/utils/pages/inbox/sales-upload";
 import { ColumnFilter, type FilterOption } from "../filter-panel";
 import { ACTIONS_WIDTH, SELECT_WIDTH } from "../table-sizing";
 import { AmountText, PageButton, PageDialog, T } from "../ui";
@@ -147,20 +149,27 @@ const formatDate = (value: unknown) => {
 
 const PreviewPage = ({ entry, onEditMapping, onExit, notify }: Props) => {
   const { batch, rows } = entry;
+  const fieldConfig = useFieldConfig(entry.companyId);
   const id = batch.importBatchUuid;
   /* Production's columns, then whatever optional fields this upload mapped,
      then Status — still pinned last. */
   const columns = useMemo(() => {
-    const extra = additionalPreviewColumns(
-      Object.keys(entry.fieldMappings).filter(isAdditionalKey)
+    const mappedKeys = Object.keys(entry.draft.fieldMappings).filter(
+      isAdditionalKey
     );
+    // PROTOTYPE: and any a mapped trigger owes, so their errors can be fixed
+    // in the cell.
+    const extra = additionalPreviewColumns([
+      ...mappedKeys,
+      ...owedConditionalKeys(mappedKeys, fieldConfig),
+    ]);
     const status = PREVIEW_COLUMNS.filter((c) => c.key === "row_status");
     return [
       ...PREVIEW_COLUMNS.filter((c) => c.key !== "row_status"),
       ...extra,
       ...status,
     ];
-  }, [entry.fieldMappings]);
+  }, [entry.draft.fieldMappings, fieldConfig]);
   const [search, setSearch] = useState("");
   const [statuses, setStatuses] = useState<string[]>(
     DEFAULT_PREVIEW_ROW_STATUS_FILTER
@@ -742,7 +751,7 @@ const PreviewPage = ({ entry, onEditMapping, onExit, notify }: Props) => {
           ref={resize.gridRef}
           role="region"
           aria-label="Preview rows"
-          className="min-h-0 min-w-0 flex-1 overflow-auto border-t border-neutral-gray"
+          className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-none border-t border-neutral-gray"
         >
           <Table
             style={{ width: resize.tableWidth }}

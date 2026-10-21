@@ -651,7 +651,7 @@ const InvoiceView = ({
         </div>
       )}
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto border-t border-neutral-gray">
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-none border-t border-neutral-gray">
         <Table
           className={TABLE_CLASS}
           style={{ width: TABLE_WIDTH, minWidth: "100%" }}

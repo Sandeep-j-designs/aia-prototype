@@ -46,6 +46,7 @@ const SalesUpload = ({
       <UploadPage
         company={company}
         onMapping={(id) => onNavigate("mapping", id)}
+        onPreview={(id) => onNavigate("preview", id)}
         onExit={() => onExit("uploads")}
         notify={notify}
       />

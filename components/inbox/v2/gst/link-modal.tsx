@@ -115,7 +115,7 @@ const LinkModal = ({ base, rows, onClose, onLink }: Props) => {
         </div>
       )}
 
-      <div className="mt-4 max-h-[46vh] overflow-auto rounded-md border border-neutral-gray">
+      <div className="mt-4 max-h-[46vh] overflow-auto overscroll-none rounded-md border border-neutral-gray">
         <Table className={cn(TABLE_CLASS, "w-full")}>
           <colgroup>
             <col style={{ width: 44 }} />

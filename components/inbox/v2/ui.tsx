@@ -23,6 +23,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { ResizableHandle } from "@/components/ui/resizable";
+import { DragHandleDots2Icon } from "@radix-ui/react-icons";
 import { cn } from "@/lib/utils";
 import type { Status } from "./store";
 
@@ -434,4 +436,28 @@ export const PageButton = ({
   >
     {children}
   </Button>
+);
+
+/**
+ * The document/form split's resize handle — AP's own sheet draws a splitter
+ * with a grip that is always visible, not just a hairline that appears on
+ * hover, so a document pane reads as draggable before the pointer finds it.
+ * Every other document-beside-form split in the inbox (AR, the journal, the
+ * route-switch loader) borrows this instead of the bare default handle, so
+ * they all read as one resizer rather than AP's and everyone else's.
+ */
+export const DocumentSplitHandle = (
+  props: React.ComponentProps<typeof ResizableHandle>
+) => (
+  <ResizableHandle
+    {...props}
+    className={cn(
+      "bg-neutral-gray transition-colors hover:bg-input",
+      props.className
+    )}
+  >
+    <div className="z-10 flex h-8 w-5 items-center justify-center rounded-md bg-input text-primary shadow-sm">
+      <DragHandleDots2Icon className="h-3.5 w-3.5" />
+    </div>
+  </ResizableHandle>
 );

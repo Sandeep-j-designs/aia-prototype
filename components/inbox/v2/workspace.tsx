@@ -59,11 +59,7 @@ import {
 } from "@/components/guide/actions";
 import FileIcon from "@/components/inbox/common/file-icon";
 import JournalVoucher from "@/components/inbox/journal";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
+import { ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import PageTopBar from "@/components/common/page-top-bar";
 import {
   Popover,
@@ -139,6 +135,7 @@ import {
   AmountText,
   CountPill,
   DateField,
+  DocumentSplitHandle,
   EditedMark,
   Field,
   FieldCard,
@@ -2966,7 +2963,9 @@ export default function Workspace() {
                     )}
                   </>
                 )}
-                {!reviewable && <StatusPill status={item.status} />}
+                {!reviewable && item.status !== "Approved" && (
+                  <StatusPill status={item.status} />
+                )}
                 {/*
                   Where Tally stands on this voucher, as a marker rather than a
                   band across the screen. It replaced two full-width banners —
@@ -3371,15 +3370,15 @@ export default function Workspace() {
                       className="min-h-0 flex-1"
                     >
                       <ResizablePanel
-                        defaultSize={32}
+                        defaultSize={50}
                         minSize={18}
                         className="min-w-0"
                       >
                         <Preview item={item} />
                       </ResizablePanel>
-                      <ResizableHandle withHandle />
+                      <DocumentSplitHandle />
                       <ResizablePanel
-                        defaultSize={68}
+                        defaultSize={50}
                         minSize={40}
                         className="min-w-0"
                       >
@@ -3418,16 +3417,16 @@ export default function Workspace() {
                       className="min-h-0 flex-1"
                     >
                       <ResizablePanel
-                        defaultSize={32}
+                        defaultSize={50}
                         minSize={18}
                         className="min-w-0"
                       >
                         <Preview item={item} />
                       </ResizablePanel>
-                      <ResizableHandle withHandle />
+                      <DocumentSplitHandle />
                       <ResizablePanel
                         data-guide-id="inbox-fields"
-                        defaultSize={68}
+                        defaultSize={50}
                         minSize={40}
                         className="flex min-w-0 flex-col"
                       >
@@ -6408,11 +6407,11 @@ const BlockedReason = ({
 /** The switch's loading state beside the document it is re-reading. */
 const RouteSwitchPanel = ({ item }: { item: Item }) => (
   <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
-    <ResizablePanel defaultSize={32} minSize={18} className="min-w-0">
+    <ResizablePanel defaultSize={50} minSize={18} className="min-w-0">
       <Preview item={item} />
     </ResizablePanel>
-    <ResizableHandle withHandle />
-    <ResizablePanel defaultSize={68} minSize={40} className="min-w-0">
+    <DocumentSplitHandle />
+    <ResizablePanel defaultSize={50} minSize={40} className="min-w-0">
       <RouteSwitchLoader item={item} />
     </ResizablePanel>
   </ResizablePanelGroup>

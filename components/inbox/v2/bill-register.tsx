@@ -835,7 +835,7 @@ const BillRegister = ({
             tabIndex={0}
             aria-activedescendant={grid.activeDescendant}
             onKeyDown={grid.onGridKeyDown}
-            className="min-h-0 min-w-0 flex-1 overflow-auto focus-visible:outline-none"
+            className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-none focus-visible:outline-none"
           >
             <Table
               role="none"

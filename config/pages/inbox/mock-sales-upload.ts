@@ -4,11 +4,16 @@ import {
   type ResponseARVoucherImportBatch,
   type ResponseARVoucherImportPreviewRow,
   type ResponseARVoucherImportTemplate,
+  type MappingConfigPayload,
+  type MappingEntry,
+  type MappingFieldSelector,
   type SalesCustomerMaster,
   type SampleSalesFile,
+  type SheetTable,
 } from "@/types/pages/inbox/sales-upload";
 import {
   buildPreviewRows,
+  readSheet,
   withIssues,
   withRowCounts,
   type FieldMappings,
@@ -131,46 +136,112 @@ export const SALES_UPLOAD_HEADER = [
   "Order Date",
 ];
 
-/**
- * What every simulated upload contains. DEV: the backend reads the real file
- * — GET .../import-batches/:id/mapping returns its columns and sample rows.
- */
-export const SAMPLE_SALES_FILE: SampleSalesFile = {
-  sheets: [
-    {
-      name: "Sales Register",
-      rowCount: LINES.length + 1,
-      dataRowCount: LINES.length,
-    },
-    { name: "Summary", rowCount: 14, dataRowCount: 12 },
-  ],
-  header: SALES_UPLOAD_HEADER,
-  rows: LINES.map((l) => {
-    const taxable = r2(l.qty * l.rate);
-    const half = r2(taxable * 0.025);
-    const igst = l.inter ? r2(taxable * 0.05) : 0;
-    const cgst = l.inter ? 0 : half;
-    const total = l.totalOverride ?? r2(taxable + cgst + cgst + igst);
+const REGISTER_ROWS = LINES.map((l) => {
+  const taxable = r2(l.qty * l.rate);
+  const half = r2(taxable * 0.025);
+  const igst = l.inter ? r2(taxable * 0.05) : 0;
+  const cgst = l.inter ? 0 : half;
+  const total = l.totalOverride ?? r2(taxable + cgst + cgst + igst);
+  return [
+    l.date,
+    l.invoiceNo,
+    l.customer,
+    l.gstin,
+    l.pos,
+    l.item,
+    l.hsn,
+    l.qty,
+    l.rate,
+    taxable,
+    cgst,
+    cgst,
+    igst,
+    total,
+    l.orderNo ?? "",
+    l.orderDate ?? "",
+  ];
+});
+
+/*
+  The same month as the distributors' desk keeps it: one invoice per row, its
+  products side by side (Product 1, Product 2), freight and packing charged on
+  top, a cash discount taken off. It is what Map Fields' items, ledgers,
+  summed columns and negative adjustments are for — the suggestion maps two
+  items and sums Freight + Packing into Ledger 1, but leaves Discount Allowed
+  alone, so until it is added to Ledger 1 as a negative adjustment the
+  discounted rows don't add up.
+*/
+const WIDE_HEADER = [
+  "Bill Date",
+  "Bill No",
+  "Party",
+  "Product 1",
+  "Qty 1",
+  "Rate 1",
+  "Amount 1",
+  "Product 2",
+  "Qty 2",
+  "Rate 2",
+  "Amount 2",
+  "Freight",
+  "Packing",
+  "Discount Allowed",
+  "CGST",
+  "SGST",
+  "IGST",
+  "Grand Total",
+];
+type WideLine = [
+  string, string, string, keyof typeof ITEMS, number, number,
+  (keyof typeof ITEMS) | null, number, number, number, number, number, boolean,
+];
+// prettier-ignore
+const WIDE: WideLine[] = [
+  ["01/09/2026", "D/0101", "Sri Lakshmi Traders", "sun", 20, 2150, "gnut", 10, 2650, 850, 240, 0, false],
+  ["03/09/2026", "D/0102", "Annapoorna Wholesale", "bran", 200, 145, null, 0, 0, 600, 120, 500, false],
+  ["05/09/2026", "D/0103", "Chennai Oil Depot", "palm", 40, 1700, "sun", 15, 2150, 1800, 300, 0, true],
+  ["08/09/2026", "D/0104", "Hotel Mayura Group", "gnut", 12, 2650, "mus", 60, 168, 450, 0, 300, false],
+  ["10/09/2026", "D/0105", "Malabar Foods", "sun", 30, 2150, null, 0, 0, 1200, 180, 0, true],
+  ["12/09/2026", "D/0106", "Spar Hypermarket", "bran", 300, 142, "mus", 120, 165, 900, 260, 1000, false],
+  ["15/09/2026", "D/0107", "Vijaya Provisions", "mus", 40, 168, null, 0, 0, 250, 60, 0, false],
+  ["18/09/2026", "D/0108", "Reliance Retail Ltd", "palm", 60, 1690, "gnut", 25, 2600, 2200, 400, 1500, true],
+];
+const WIDE_ROWS = WIDE.map(
+  ([date, no, party, p1, q1, rate1, p2, q2, rate2, freight, packing, discount, inter]) => {
+    const a1 = r2(q1 * rate1);
+    const a2 = p2 ? r2(q2 * rate2) : 0;
+    const taxable = r2(a1 + a2 + freight + packing - discount);
+    const igst = inter ? r2(taxable * 0.05) : 0;
+    const half = inter ? 0 : r2(taxable * 0.025);
     return [
-      l.date,
-      l.invoiceNo,
-      l.customer,
-      l.gstin,
-      l.pos,
-      l.item,
-      l.hsn,
-      l.qty,
-      l.rate,
-      taxable,
-      cgst,
-      cgst,
-      igst,
-      total,
-      l.orderNo ?? "",
-      l.orderDate ?? "",
+      date, `SOR/26-27/${no}`, party,
+      ITEMS[p1].name, q1, rate1, a1,
+      p2 ? ITEMS[p2].name : "", p2 ? q2 : "", p2 ? rate2 : "", p2 ? a2 : "",
+      freight, packing, discount, half, half, igst,
+      r2(taxable + half + half + igst),
     ];
-  }),
+  }
+);
+
+/**
+ * What every simulated upload contains: the register, and the same month
+ * laid out wide on a second sheet. DEV: the backend reads the real file —
+ * GET .../import-batches/:id/mapping returns its sheets, the columns of the
+ * one picked, and sample rows.
+ */
+const CELLS: SampleSalesFile["cells"] = {
+  "Sales Register": [SALES_UPLOAD_HEADER, ...REGISTER_ROWS],
+  "Invoices (wide)": [WIDE_HEADER, ...WIDE_ROWS],
 };
+export const SAMPLE_SALES_FILE: SampleSalesFile = {
+  sheets: Object.entries(CELLS).map(([name, cells]) => ({
+    name,
+    rowCount: cells.length,
+    dataRowCount: cells.length - 1,
+  })),
+  cells: CELLS,
+};
+export const REGISTER_TABLE = readSheet(SAMPLE_SALES_FILE, "Sales Register", 1);
 
 /** A CSV of the sample, for the sample-template download buttons. */
 export const sampleCsv = (mode: "item" | "accounting") => {
@@ -180,7 +251,7 @@ export const sampleCsv = (mode: "item" | "accounting") => {
       : SALES_UPLOAD_HEADER.filter(
           (h) => !["Item", "HSN", "Qty", "Rate"].includes(h)
         );
-  const rows = SAMPLE_SALES_FILE.rows
+  const rows = REGISTER_ROWS
     .slice(0, 3)
     .map((row) =>
       SALES_UPLOAD_HEADER.map((h, i) =>
@@ -194,67 +265,172 @@ export const sampleCsv = (mode: "item" | "accounting") => {
 
 /* ------------------------------------------------------------------ mapping */
 
+type Target =
+  | ARKey
+  | { collection: "items" | "ledgers"; index: number; field: ARKey };
+type ARKey = Extract<MappingFieldSelector, string>;
+
+const item = (index: number, field: ARKey): Target => ({
+  collection: "items",
+  index,
+  field,
+});
+const ledger = (index: number, field: ARKey): Target => ({
+  collection: "ledgers",
+  index,
+  field,
+});
+
+/*
+  What the backend's AI recognises, column name → field, per mode. "Taxable
+  Value" reads as Item 1's amount in Item Mode; in Accounting Mode the AI
+  isn't sure it is the ledger amount, so Ledger 1 waits on the accountant —
+  the required-fields banner has something to say. GSTIN is not a mapping
+  field: production takes it from the customer master.
+
+  PROTOTYPE: Place of Supply is not a mapping field either — the state comes
+  from the customer master. The order columns map to Order Details, off by
+  default, so they are held back until it is switched on.
+*/
+const RECOGNISED: Record<VoucherViewMode, [string, Target][]> = {
+  [VoucherViewMode.ITEM_MODE]: [
+    ["Invoice Date", "invoice_date"],
+    ["Bill Date", "invoice_date"],
+    ["Invoice No", "reference_number"],
+    ["Bill No", "reference_number"],
+    ["Customer", "customer_name"],
+    ["Party", "customer_name"],
+    ["Item", item(0, "item_name")],
+    ["HSN", item(0, "hsn_sac")],
+    ["Qty", item(0, "quantity")],
+    ["Rate", item(0, "unit_rate")],
+    ["Taxable Value", item(0, "item_amount")],
+    ["Product 1", item(0, "item_name")],
+    ["Qty 1", item(0, "quantity")],
+    ["Rate 1", item(0, "unit_rate")],
+    ["Amount 1", item(0, "item_amount")],
+    ["Product 2", item(1, "item_name")],
+    ["Qty 2", item(1, "quantity")],
+    ["Rate 2", item(1, "unit_rate")],
+    ["Amount 2", item(1, "item_amount")],
+    ["Freight", ledger(0, "ledger_amount")],
+    ["Packing", ledger(0, "ledger_amount")],
+    ["CGST", "cgst_amount"],
+    ["SGST", "sgst_amount"],
+    ["IGST", "igst_amount"],
+    ["Total", "total_amount"],
+    ["Grand Total", "total_amount"],
+    ["Buyer's Order No", "order_no"],
+    ["Order Date", "order_date"],
+  ],
+  [VoucherViewMode.ACCOUNTING_MODE]: [
+    ["Invoice Date", "invoice_date"],
+    ["Bill Date", "invoice_date"],
+    ["Invoice No", "reference_number"],
+    ["Bill No", "reference_number"],
+    ["Customer", "customer_name"],
+    ["Party", "customer_name"],
+    ["Item", ledger(0, "ledger_description")],
+    ["Product 1", ledger(0, "ledger_description")],
+    ["Amount 1", ledger(0, "ledger_amount")],
+    ["Amount 2", ledger(0, "ledger_amount")],
+    ["Freight", ledger(1, "ledger_amount")],
+    ["Packing", ledger(1, "ledger_amount")],
+    ["CGST", "cgst_amount"],
+    ["SGST", "sgst_amount"],
+    ["IGST", "igst_amount"],
+    ["Total", "total_amount"],
+    ["Grand Total", "total_amount"],
+    ["Buyer's Order No", "order_no"],
+    ["Order Date", "order_date"],
+  ],
+};
+
 /**
- * The backend's suggested mapping for the sample (`mappingPayload`). "Taxable
- * Value" is left unmatched on purpose — the AI was not sure it meant Item
- * Amount — so the required-fields banner has something to say. GSTIN is not
- * a mapping field: production takes it from the customer master.
- *
- * PROTOTYPE: Place of Supply maps to the Consignee group's field, which is on
- * by default. The order columns are suggested too, but Order Details starts
- * off, so they stay unmapped until it is switched on (see ADDITIONAL_SUGGESTION).
+ * PROTOTYPE: the backend's suggested mapping (`mappingPayload`) for the
+ * columns read — what Reset Mapping and a new sheet or header row go back to.
+ * A header row that isn't the real one reads as data, so nothing matches.
+ * Two columns suggested for one amount are summed, as the field allows.
  */
-export const SUGGESTED_ITEM_MAPPING: FieldMappings = {
-  invoice_date: { sourceColumns: ["Invoice Date"] },
-  reference_number: { sourceColumns: ["Invoice No"] },
-  customer_name: { sourceColumns: ["Customer"] },
-  place_of_supply: { sourceColumns: ["Place of Supply"] },
+export const suggestMapping = (
+  table: SheetTable,
+  mode: VoucherViewMode
+): {
+  fieldMappings: FieldMappings;
+  items: MappingEntry[];
+  ledgers: MappingEntry[];
+} => {
+  const fieldMappings: FieldMappings = {};
+  const entries = { items: [] as MappingEntry[], ledgers: [] as MappingEntry[] };
+  const add = (fields: FieldMappings, key: ARKey, column: string) => {
+    const columns = [...(fields[key]?.sourceColumns ?? []), column];
+    fields[key] = {
+      sourceColumns: columns,
+      ...(columns.length > 1 ? { transform: "sum" as const } : {}),
+    };
+  };
+  for (const [column, target] of RECOGNISED[mode]) {
+    if (!table.header.includes(column)) continue;
+    if (typeof target === "string") add(fieldMappings, target, column);
+    else {
+      const list = entries[target.collection];
+      while (list.length <= target.index)
+        list.push({ id: crypto.randomUUID(), fields: {} });
+      add(list[target.index].fields, target.field, column);
+    }
+  }
+  for (const list of [entries.items, entries.ledgers])
+    if (!list.length) list.push({ id: crypto.randomUUID(), fields: {} });
+  return { fieldMappings, ...entries };
+};
+
+const REGISTER_ITEM_ONE = {
   item_name: { sourceColumns: ["Item"] },
   hsn_sac: { sourceColumns: ["HSN"] },
   quantity: { sourceColumns: ["Qty"] },
   unit_rate: { sourceColumns: ["Rate"] },
-  cgst_amount: { sourceColumns: ["CGST"] },
-  sgst_amount: { sourceColumns: ["SGST"] },
-  igst_amount: { sourceColumns: ["IGST"] },
-  total_amount: { sourceColumns: ["Total"] },
+  item_amount: { sourceColumns: ["Taxable Value"] },
 };
-
-/** The same file read in Accounting Mode: no items, a ledger line instead. */
-export const SUGGESTED_ACCOUNTING_MAPPING: FieldMappings = {
+const REGISTER_HEADER: FieldMappings = {
   invoice_date: { sourceColumns: ["Invoice Date"] },
   reference_number: { sourceColumns: ["Invoice No"] },
   customer_name: { sourceColumns: ["Customer"] },
-  place_of_supply: { sourceColumns: ["Place of Supply"] },
-  ledger_description: { sourceColumns: ["Item"] },
   cgst_amount: { sourceColumns: ["CGST"] },
   sgst_amount: { sourceColumns: ["SGST"] },
   igst_amount: { sourceColumns: ["IGST"] },
   total_amount: { sourceColumns: ["Total"] },
 };
 
+/** A finished Item Mode mapping of the register, as a reviewed batch holds it. */
+export const completeRegisterDraft = (): MappingConfigPayload => ({
+  payloadType: "mapping_config",
+  importMode: VoucherViewMode.ITEM_MODE,
+  selection: { selectedSheetName: "Sales Register", headerRowIndex: 1 },
+  options: { dateFormat: "dd/MM/yyyy", discountType: "percentage" },
+  fieldMappings: REGISTER_HEADER,
+  items: [{ id: "seed-item-1", fields: REGISTER_ITEM_ONE }],
+  ledgers: [{ id: "seed-ledger-1", fields: {} }],
+});
+
 /**
- * PROTOTYPE: what the backend would also suggest for the sample, had the
- * company its optional groups on. Applied when Field Configuration switches
- * the group on, wherever the column is still free.
+ * GET /api/accounts-receivable/v2/import-templates. The Tally one was saved
+ * from this register, so it fits every simulated upload and the batch goes
+ * straight to preview. The Zoho one was saved from a Zoho Books export — its
+ * columns ("Invoice Number", "Item Total"…) aren't in this file, so the
+ * batch stops at Map Fields with "Template mismatch detected".
  */
-export const ADDITIONAL_SUGGESTION: FieldMappings = {
-  order_no: { sourceColumns: ["Buyer's Order No"] },
-  order_date: { sourceColumns: ["Order Date"] },
-};
-
-/** A complete mapping — what a saved template, or a finished mapping, holds. */
-export const COMPLETE_ITEM_MAPPING: FieldMappings = {
-  ...SUGGESTED_ITEM_MAPPING,
-  item_amount: { sourceColumns: ["Taxable Value"] },
-};
-
-/** GET /api/accounts-receivable/v2/import-templates */
 export const MOCK_IMPORT_TEMPLATES: ResponseARVoucherImportTemplate[] = [
   {
     templateUuid: "tpl-tally-sales-register",
     name: "Tally Sales Register (Item)",
     importMode: VoucherViewMode.ITEM_MODE,
-    configPayload: { fieldMappings: COMPLETE_ITEM_MAPPING },
+    configPayload: {
+      selection: { selectedSheetName: "Sales Register", headerRowIndex: 1 },
+      options: { dateFormat: "dd/MM/yyyy", discountType: "percentage" },
+      fieldMappings: REGISTER_HEADER,
+      items: [{ id: "tpl-tally-item-1", fields: REGISTER_ITEM_ONE }],
+      ledgers: [{ id: "tpl-tally-ledger-1", fields: {} }],
+    },
     createdAt: "2026-08-04T06:10:00.000Z",
     updatedAt: "2026-08-04T06:10:00.000Z",
   },
@@ -263,10 +439,24 @@ export const MOCK_IMPORT_TEMPLATES: ResponseARVoucherImportTemplate[] = [
     name: "Zoho Invoice Export",
     importMode: VoucherViewMode.ACCOUNTING_MODE,
     configPayload: {
+      selection: { selectedSheetName: "Sales Register", headerRowIndex: 1 },
+      options: { dateFormat: "yyyy-MM-dd", discountType: "amount" },
       fieldMappings: {
-        ...SUGGESTED_ACCOUNTING_MAPPING,
-        ledger_amount: { sourceColumns: ["Taxable Value"] },
+        invoice_date: { sourceColumns: ["Invoice Date"] },
+        reference_number: { sourceColumns: ["Invoice Number"] },
+        customer_name: { sourceColumns: ["Customer Name"] },
+        total_amount: { sourceColumns: ["Total"] },
       },
+      items: [{ id: "tpl-zoho-item-1", fields: {} }],
+      ledgers: [
+        {
+          id: "tpl-zoho-ledger-1",
+          fields: {
+            ledger_name: { sourceColumns: ["Account"] },
+            ledger_amount: { sourceColumns: ["Item Total"] },
+          },
+        },
+      ],
     },
     createdAt: "2026-07-21T09:40:00.000Z",
     updatedAt: "2026-07-21T09:40:00.000Z",
@@ -348,8 +538,8 @@ const batch = (
   importMode: VoucherViewMode.ITEM_MODE,
   selectedSheetName: "Sales Register",
   headerRowIndex: 1,
-  dateFormat: "DD/MM/YYYY",
-  discountType: null,
+  dateFormat: "dd/MM/yyyy",
+  discountType: "percentage",
   totalRows: 0,
   pendingRows: 0,
   readyRows: 0,
@@ -366,11 +556,10 @@ const batch = (
 
 const previewOf = (batchId: string, limit?: number) =>
   buildPreviewRows({
-    file: SAMPLE_SALES_FILE,
-    mappings: COMPLETE_ITEM_MAPPING,
+    file: REGISTER_TABLE,
+    draft: completeRegisterDraft(),
     masters: MOCK_SALES_CUSTOMERS,
     gstRegistration: SALES_GST_REGISTRATION,
-    mode: VoucherViewMode.ITEM_MODE,
     batchId,
     limit,
   });

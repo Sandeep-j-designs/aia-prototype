@@ -40,6 +40,8 @@ import { FlowHeader } from "./common";
 type Props = {
   company: string;
   onMapping: (batchId: string) => void;
+  /** A saved template that fit the file: its preview is ready. */
+  onPreview: (batchId: string) => void;
   onExit: () => void;
   notify: (
     message: string,
@@ -53,7 +55,13 @@ const cx = (...names: (string | false | undefined)[]) =>
     .map((name) => s[name as string])
     .join(" ");
 
-const UploadPage = ({ company, onMapping, onExit, notify }: Props) => {
+const UploadPage = ({
+  company,
+  onMapping,
+  onPreview,
+  onExit,
+  notify,
+}: Props) => {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -73,6 +81,13 @@ const UploadPage = ({ company, onMapping, onExit, notify }: Props) => {
         pending.batch.failureMessage ?? "Failed to upload invoice.",
         "error"
       );
+      return;
+    }
+    // Production: getArImportBatchReviewRoute — a template that fit has
+    // already been previewed.
+    if (pending.batch.status === ARVoucherImportBatchStatus.NEEDS_REVIEW) {
+      notify("Preview generated.");
+      onPreview(pending.batch.importBatchUuid);
       return;
     }
     onMapping(pending.batch.importBatchUuid);

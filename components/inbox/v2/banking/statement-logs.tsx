@@ -281,7 +281,7 @@ const StatementLogs = ({
 
       <div
         ref={resize.gridRef}
-        className="min-h-0 min-w-0 flex-1 overflow-auto"
+        className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-none"
       >
         <Table style={{ width: resize.tableWidth }} className={TABLE_CLASS}>
           <TableHeader className={HEADER_CLASS}>

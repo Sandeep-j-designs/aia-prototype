@@ -148,7 +148,7 @@ const SummaryView = ({ rows, onOpenStatus }: Props) => {
     });
 
   return (
-    <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+    <div className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-none">
       <Table className={cn(TABLE_CLASS, "w-full table-auto")}>
         <colgroup>
           <col style={{ width: 200 }} />

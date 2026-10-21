@@ -127,7 +127,7 @@ export const arDocumentFor = (
 
 /**
  * Where the row says the supply landed. The grid holds a two-letter state code;
- * the sheet's Place of Supply is the same code, so it goes over as-is and the
+ * the sheet's destination state is the same code, so it goes over as-is and the
  * sheet resolves it against its own state master.
  */
 export const arPlaceOfSupply = (item: InboxItem, index: number): string =>

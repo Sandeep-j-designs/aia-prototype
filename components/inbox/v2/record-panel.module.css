@@ -1,6 +1,8 @@
 /*
-  The record panel: a grey ground holding a quiet toolbar, with the voucher on
-  a sheet above it. The table it was opened from keeps the rest of the width.
+  The record panel: one white surface — a quiet toolbar ruled off from the
+  voucher below it. It used to be a tinted ground with the voucher on a
+  bordered sheet, and with the form's own bordered sections inside that, the
+  record sat in three frames; the ground read as a stray tint (15 Oct). The table it was opened from keeps the rest of the width.
   Motion is transform and opacity only; the table's narrowing is not animated.
 */
 .panel {
@@ -12,7 +14,7 @@
   flex: 0 0 auto;
   width: clamp(560px, 52%, 880px);
   min-height: 0;
-  background: hsl(var(--section));
+  background: hsl(var(--background));
   border-left: 1px solid hsl(var(--neutral-gray));
   animation: panel-in var(--enter) cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
@@ -55,7 +57,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 24px 12px;
+  padding: 12px 24px;
+  border-bottom: 1px solid hsl(var(--neutral-gray));
 }
 .group {
   display: flex;
@@ -96,6 +99,57 @@
   color: hsl(var(--secondary-foreground));
   opacity: 0.5;
 }
+/* The source file, by name, beside the voucher no.: a quiet pill on the
+   tools' grey, filled in the secondary blue while its document is showing. */
+.source {
+  display: inline-flex;
+  flex-shrink: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 28px;
+  max-width: 260px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 9999px;
+  background: hsl(var(--neutral-gray));
+  color: hsl(var(--foreground));
+  font-size: 13px;
+  line-height: 18px;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+.source svg {
+  flex-shrink: 0;
+  color: hsl(var(--secondary-foreground));
+}
+.source:hover {
+  background: hsl(var(--border));
+}
+.source:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+.source[aria-pressed="true"] {
+  background: hsl(var(--secondary));
+  color: hsl(var(--accent-foreground));
+}
+.source[aria-pressed="true"] svg {
+  color: currentColor;
+}
+.sourceName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.noSource {
+  flex-shrink: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: hsl(var(--secondary-foreground));
+  white-space: nowrap;
+}
 /* Red only on intent — the control is grey until it is reached for. */
 .danger:hover:not(:disabled) {
   background: hsl(var(--badge-negative));
@@ -108,14 +162,13 @@
   min-height: 0;
   flex: 1;
   overflow: auto;
-  padding: 0 24px 24px;
   scrollbar-gutter: stable;
 }
+/* No frame of its own: the panel is already the white surface, and the
+   form's sections are the only boxes in it. */
 .sheet {
   min-height: 100%;
-  padding: 32px;
-  border: 1px solid hsl(var(--neutral-gray));
-  border-radius: 12px;
+  padding: 28px 32px 32px;
   background: hsl(var(--background));
 }
 .expanded .sheet {
@@ -224,6 +277,7 @@
   tab strip (40px), so the form below starts where it always does.
 */
 .recordHead {
+  container: recordhead / inline-size;
   position: absolute;
   top: 20px;
   left: 20px;
@@ -240,6 +294,7 @@
   pointer-events: none;
 }
 .recordTitle {
+  flex-shrink: 0;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -251,12 +306,25 @@
   color: hsl(var(--foreground));
 }
 .recordAmount {
+  flex-shrink: 0;
   margin-left: auto;
+  white-space: nowrap;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 20px;
   font-weight: 500;
   line-height: 28px;
   font-variant-numeric: tabular-nums;
   color: hsl(var(--foreground));
+}
+.recordAmountLabel {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: hsl(var(--secondary-foreground));
 }
 .reading :global(:is(.ap-sheet, .ar-sheet)) :global(.modebar) {
   opacity: 0;
@@ -792,6 +860,7 @@
 /* A journal has no mode tabs to sit over, so its header takes its own row
    and stays in both modes — the form below it never moves. */
 .journalHead {
+  container: recordhead / inline-size;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -918,52 +987,29 @@
 /* --------------------------------------------------------------- document */
 
 /*
-  The body is two columns: the source document and the record. The document
-  column sits at zero until the expanded record is edited, then opens to
-  half the width; the grid track animates, so the form narrows in step with
-  the document arriving instead of jumping to its new width.
+  The body is two columns, source document beside record — the same
+  resizable split the review screen gives AR and the journal, so dragging
+  the handle here behaves exactly as it does there.
 */
 .split {
-  --doc-swap: 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  display: grid;
   flex: 1;
   min-height: 0;
-  grid-template-columns: 0fr 1fr;
-  transition: grid-template-columns var(--doc-swap);
-}
-.withDocument {
-  grid-template-columns: 1fr 1fr;
-}
-.split > .scroll {
-  min-width: 0;
 }
 .documentPane {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  opacity: 0;
-  transition: opacity var(--doc-swap);
 }
-.withDocument .documentPane {
-  opacity: 1;
-}
-/* Holds a readable width while its column opens, so the page is clipped
-   rather than squeezed mid-animation. */
+/* Holds a readable width inside its pane; the preview draws its own card,
+   this only sizes and clips it. */
 .documentInner {
   display: flex;
   flex-direction: column;
   height: calc(100% - 24px);
-  min-width: 300px;
-  margin-left: 24px;
+  min-width: 260px;
+  margin: 12px 0 12px 24px;
   overflow: hidden;
-  /* The preview draws its own card; this only sizes and clips it. */
   border-radius: 12px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .split,
-  .documentPane {
-    transition: none;
-  }
 }
 
 /* ------------------------------------------------------------ breakpoints */
@@ -1014,24 +1060,64 @@
   white-space: nowrap;
 }
 
-/* On a narrow panel the document gives the record the larger share, so the
-   form keeps room for its two columns. */
 .panel {
   container-type: inline-size;
-}
-@container (max-width: 1240px) {
-  .withDocument {
-    grid-template-columns: 2fr 3fr;
-  }
-}
-@container (max-width: 900px) {
-  .withDocument {
-    grid-template-columns: 1fr 2fr;
-  }
 }
 
 /* The class / centre switch row stays inside its column when it is narrow. */
 .form :global(:is(.ap-sheet, .ar-sheet)) :global(.switch-row) {
   min-width: 0;
   overflow: hidden;
+}
+
+/*
+  The header is one 40px row at every width (it sits where the edit tabs
+  are), so it never wraps. The voucher no. and the grand total are what the
+  row is for and keep their words; the file pill gives way around them. As
+  it narrows: the pill truncates its name (whole on hover), then the
+  total's label stacks over the figure, then the pill folds to its icon,
+  and only last does the voucher no. truncate.
+*/
+.source {
+  flex-shrink: 1;
+}
+@container recordhead (max-width: 640px) {
+  .recordAmount {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0;
+    font-size: 18px;
+    line-height: 24px;
+  }
+  .recordAmountLabel {
+    font-size: 10px;
+    line-height: 14px;
+  }
+}
+@container recordhead (max-width: 520px) {
+  .source {
+    width: 28px;
+    padding: 0;
+    justify-content: center;
+  }
+  .sourceName,
+  .noSource {
+    display: none;
+  }
+}
+@container recordhead (max-width: 380px) {
+  .recordTitle {
+    flex-shrink: 1;
+  }
+}
+
+/*
+  The sheets cap their "narrow" sections (the details card, additional
+  details, the mode tabs the header sits over) at 642–900px while the
+  tables and the totals run the full width. In the panel every block keeps
+  one right edge, so the grand total in the header ends where the card,
+  the tables and the totals do.
+*/
+.form :global(:is(.ap-sheet, .ar-sheet)) :global(.form__narrow) {
+  max-width: none !important;
 }

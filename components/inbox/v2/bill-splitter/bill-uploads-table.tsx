@@ -99,7 +99,7 @@ const BillUploadsTable = ({
   const cell = cn("h-[52px] px-3 py-0 align-middle", T.cell);
 
   return (
-    <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+    <div className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-none">
       <Table className="border-separate border-spacing-0 [&_td]:border-b [&_td]:border-neutral-gray [&_th]:border-y [&_th]:border-neutral-gray">
         <TableHeader className="sticky top-0 z-10 bg-accent">
           <TableRow>

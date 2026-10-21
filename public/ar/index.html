@@ -4628,7 +4628,6 @@ let SAMPLE = {
     consigneeAddress: 'No. 42, 1st Floor, HSR Layout Sector 2, Bengaluru',
     consigneeState:   'KA',
     consigneePincode: '560102',
-    placeOfSupply:    'KA',
     orderNo:          'PO/2026/0442',
     receiptNoteNo:    'DC/2026/1187'
   },
@@ -4885,8 +4884,7 @@ const FIELD_GROUPS = [
     {id:'consigneeState',   name:'State (Consignee)',     type:'select', list:'states',    ph:'Select State'},
     {id:'consigneeCountry', name:'Country (Consignee)',   type:'select', list:'countries', ph:'Select Country'},
     {id:'consigneePincode', name:'Pincode (Consignee)',   type:'text',   ph:'Enter Pincode', mode:'numeric', max:6, fmt:FMT.pin},
-    {id:'consigneeGstin',   name:'Consignee (GSTIN/UIN)', type:'text',   ph:'Enter GSTIN/UIN', max:15, fmt:FMT.gstin},
-    {id:'placeOfSupply',    name:'Place of Supply',       type:'select', list:'states',    ph:'Select Place of Supply', wide:true}
+    {id:'consigneeGstin',   name:'Consignee (GSTIN/UIN)', type:'text',   ph:'Enter GSTIN/UIN', max:15, fmt:FMT.gstin}
   ]},
   {id:'import', name:'Export Details', on:false, fields:[
     {id:'placeOfReceipt',  name:'Place of Receipt by Shipper',    type:'text',   ph:'Enter place of receipt', wide:true, max:25},
@@ -4931,8 +4929,6 @@ const FIELD_GROUPS = [
      note:'Mandatory when E-Way Bill No is filled.', req:'ewayNo'},
     {id:'ewayDispatchFrom',name:'Dispatch From',             type:'text',   ph:'Enter place of dispatch', max:100},
     {id:'ewayShipTo',      name:'Ship To',                   type:'text',   ph:'Enter place of delivery', max:100},
-    {id:'ewayDistance',    name:'Pin to Pin Distance as per Portal', type:'text', ph:'Enter distance in km', mode:'numeric', max:4, fmt:FMT.km,
-     note:'Mandatory when E-Way Bill No is filled. Up to 4,000 km.', req:'ewayNo'},
     {id:'transporterName', name:'Transporter Name',          type:'text',   ph:'Enter transporter name', max:50},
     {id:'transporterId',   name:'Transporter ID',            type:'text',   ph:'Enter 15-character transporter ID', max:15, fmt:FMT.transporter,
      note:'Mandatory when E-Way Bill No is filled.', req:'ewayNo'},
@@ -12967,7 +12963,6 @@ function fillConsignee(values, id){
   fill('consigneeCountry', 'IN');
   fill('consigneePincode', pin);
   fill('consigneeGstin',   c.gstin);
-  fill('placeOfSupply',    c.state);
   return true;
 }
 

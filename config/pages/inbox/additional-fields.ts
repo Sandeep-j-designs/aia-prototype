@@ -22,7 +22,6 @@ export type AdditionalFieldKey =
   | "consignee_country"
   | "consignee_pincode"
   | "consignee_gstin"
-  | "place_of_supply"
   | "place_of_receipt"
   | "vessel_flight_no"
   | "port_of_loading"
@@ -203,7 +202,6 @@ export const AR_ADDITIONAL_GROUPS: AdditionalGroup[] = [
       { key: "consignee_country", id: "consigneeCountry", label: "Country (Consignee)", type: "choice", list: COUNTRIES },
       { key: "consignee_pincode", id: "consigneePincode", label: "Pincode (Consignee)", type: "text", fmt: FMT.pin },
       { key: "consignee_gstin", id: "consigneeGstin", label: "Consignee (GSTIN/UIN)", type: "text", fmt: FMT.gstin },
-      { key: "place_of_supply", id: "placeOfSupply", label: "Place of Supply", type: "choice", list: STATES },
     ],
   },
   {

@@ -5,6 +5,7 @@ import {
   FileText,
   Maximize,
   Minimize,
+  X,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -49,9 +50,12 @@ type Mode = "fit-width" | "fit-page" | "level";
 export default function Preview({
   item,
   variant = "default",
+  onHide,
 }: {
   item: Item;
   variant?: "default" | "record";
+  /** Where the viewer sits beside a record, the way to put it away. */
+  onHide?: () => void;
 }) {
   const [url, setUrl] = useState(""),
     [mode, setMode] = useState<Mode>("fit-width"),
@@ -224,6 +228,11 @@ export default function Preview({
             >
               {full ? <Minimize /> : <Maximize />}
             </ViewerAction>
+            {onHide && (
+              <ViewerAction label="Hide document" onClick={onHide}>
+                <X />
+              </ViewerAction>
+            )}
           </div>
         </header>
         <div ref={body} className={s.body}>

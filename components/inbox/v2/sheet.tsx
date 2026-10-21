@@ -148,7 +148,6 @@ export default function Sheet({
   }, []);
   return (
     <ApSheet
-      status={item.status}
       // A new bill, or the same bill re-routed, needs a fresh evaluation of the
       // engine — it boots against the DOM and holds the bill in closure state.
       key={`${item.company}-${item.id}-${item.route}`}

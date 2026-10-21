@@ -501,9 +501,6 @@ export function ApprovedDetails({
     <article aria-label="Approved voucher details" className={s.record}>
       <header className={s.head}>
         <h1 className={s.title}>{f.voucherNo || partyName}</h1>
-        <Badge color="positive" size="md">
-          Approved
-        </Badge>
       </header>
 
       <dl className={s.fields} aria-label="Voucher information">

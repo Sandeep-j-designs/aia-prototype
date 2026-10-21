@@ -159,7 +159,7 @@ const ColumnsMappingModal = ({
         </label>
       </div>
 
-      <div className="mx-7 max-h-[52vh] min-h-0 overflow-auto rounded-md border border-neutral-gray">
+      <div className="mx-7 max-h-[52vh] min-h-0 overflow-auto overscroll-none rounded-md border border-neutral-gray">
         <Table className="table-fixed border-separate border-spacing-0 [&_td]:border-b [&_td]:border-neutral-gray [&_td:not(:last-child)]:border-r [&_th:not(:last-child)]:border-r [&_th]:border-b [&_th]:border-neutral-gray">
           <colgroup>
             <col className="w-[36%]" />

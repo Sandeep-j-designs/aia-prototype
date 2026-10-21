@@ -70,32 +70,102 @@ export type ARBulkUploadFieldKey =
   | "unit_rate"
   | "discount"
   | "item_amount"
-  /* PROTOTYPE: the sales invoice's optional groups, mappable when the
-     company's Field Configuration has them on. Not in production yet — see
+  /* PROTOTYPE: the sales invoice's optional groups, mappable from Map
+     Fields — picking one there switches it on in the company's Field
+     Configuration. Not in production yet — see
      config/pages/inbox/additional-fields. */
   | AdditionalFieldKey;
 
+export type FieldMappingTransform = "sum";
+export type FieldOptionType = "date_format" | "discount_type" | "amount_type";
+/** Production: DiscountType in config/pages/accounts-payable. */
+export type MappingAmountType = "percentage" | "amount";
+export type MappingDiscountType = MappingAmountType;
+
 export interface FieldMappingConfig {
   sourceColumns: string[];
+  /** Columns whose values are subtracted rather than added. */
+  negativeAdjustmentColumns?: string[];
+  /** Set once a "sum" field holds more than one column. */
+  transform?: FieldMappingTransform;
+  valueType?: MappingAmountType;
+}
+
+export interface MappingOption {
+  label: string;
+  value: string;
 }
 
 export interface MappingFieldSchema {
   key: ARBulkUploadFieldKey;
   label: string;
   required?: boolean;
+  /** The field takes several columns and adds them up. */
+  multiSelectTransform?: FieldMappingTransform;
+  /** The inline control its row shows once mapped. */
+  optionType?: FieldOptionType;
+  supportsNegativeAdjustment?: boolean;
   /** PROTOTYPE: mandatory once this other field is mapped. */
   requiredWhen?: ARBulkUploadFieldKey;
+  /** PROTOTYPE: an invoice field switched off inside a group that is on. */
+  off?: boolean;
 }
 
 export interface MappingFieldGroupSchema {
   id: string;
   label: string;
   fields: MappingFieldSchema[];
+  /** Item and ledger groups: each used entry maps at least one of these. */
+  requiredAnyOf?: ARBulkUploadFieldKey[];
+  /** PROTOTYPE: an optional invoice group the company has switched off. */
+  off?: boolean;
 }
 
 export interface MappingSchemaPayload {
   fieldGroups: MappingFieldGroupSchema[];
+  dateFormatOptions: MappingOption[];
+  discountTypeOptions: MappingOption[];
+  amountTypeOptions: MappingOption[];
 }
+
+export type MappingEntryCollection = "items" | "ledgers";
+
+/** One item or ledger of a row — Item 1, Item 2, Ledger 1… */
+export interface MappingEntry {
+  /** Stable across saves; the number shown is its position. */
+  id: string;
+  fields: Partial<Record<ARBulkUploadFieldKey, FieldMappingConfig>>;
+}
+
+export type FieldMappingsPayload = Partial<
+  Record<ARBulkUploadFieldKey, FieldMappingConfig>
+>;
+
+/** Production's draft: everything Map Fields edits, as PATCH .../mapping takes it. */
+export interface MappingConfigPayload {
+  payloadType: "mapping_config";
+  importMode: VoucherViewMode;
+  selection: {
+    selectedSheetName: string | null;
+    headerRowIndex: number | null;
+  };
+  options: {
+    dateFormat: string;
+    discountType: MappingDiscountType;
+  };
+  fieldMappings: FieldMappingsPayload;
+  items?: MappingEntry[];
+  ledgers?: MappingEntry[];
+}
+
+/** What a row of the mapping table points at: a header field, or a field of one entry. */
+export type MappingFieldSelector =
+  | ARBulkUploadFieldKey
+  | {
+      collection: MappingEntryCollection;
+      entryId: string;
+      field: ARBulkUploadFieldKey;
+    };
 
 export interface SheetSummary {
   name: string;
@@ -111,7 +181,14 @@ export interface ResponseARVoucherImportTemplate {
   name: string;
   importMode: VoucherViewMode;
   configPayload: {
-    fieldMappings: Partial<Record<ARBulkUploadFieldKey, FieldMappingConfig>>;
+    selection?: {
+      selectedSheetName: string | null;
+      headerRowIndex: number | null;
+    };
+    options?: { dateFormat: string; discountType: MappingDiscountType };
+    fieldMappings: FieldMappingsPayload;
+    items?: MappingEntry[];
+    ledgers?: MappingEntry[];
   };
   createdAt: string;
   updatedAt: string;
@@ -155,8 +232,14 @@ export interface ResponseARVoucherImportBatchMapping {
   sheets: SheetSummary[];
   detectedColumns: string[];
   mappingSchema: MappingSchemaPayload;
+  dateFormat: string | null;
+  discountType: MappingDiscountType | null;
   /** The backend's suggestion — what Reset Mapping goes back to. */
-  mappingPayload: Partial<Record<ARBulkUploadFieldKey, FieldMappingConfig>>;
+  mappingPayload: {
+    fieldMappings: FieldMappingsPayload;
+    items: MappingEntry[];
+    ledgers: MappingEntry[];
+  };
   sampleRowPayload: SampleRowPayload;
 }
 
@@ -257,6 +340,12 @@ export interface ResponseARVoucherImportBatchSave {
  */
 export type SampleSalesFile = {
   sheets: SheetSummary[];
+  /** Each sheet's cells, row 1 first — the header row is whichever is picked. */
+  cells: Record<string, (string | number)[][]>;
+};
+
+/** One sheet read from a header row: its columns, and the rows under it. */
+export type SheetTable = {
   header: string[];
   rows: (string | number)[][];
 };

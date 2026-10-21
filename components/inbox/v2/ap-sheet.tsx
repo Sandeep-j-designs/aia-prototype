@@ -1,7 +1,4 @@
 import React, { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { StatusPill } from "./ui";
-import type { Item } from "./store";
 import { AP_SHEET_VERSION } from "@/components/inbox/v2/ap-sheet-version";
 import { supersedeSheets } from "@/components/inbox/v2/sheet-generation";
 import { asset } from "@/lib/base-path";
@@ -33,7 +30,6 @@ import { cn } from "@/lib/utils";
 type Props = {
   /** Remount key material — a new bill needs a fresh engine evaluation. */
   itemId: string;
-  status: Item["status"];
   /**
    * A bill raised by hand has no document behind it, so the sheet's own
    * document pane and splitter go and the form has the width to itself.
@@ -43,26 +39,9 @@ type Props = {
 
 const CSS_ID = "ap-sheet-css";
 
-const ApSheet = ({ itemId, status, noDocument }: Props) => {
+const ApSheet = ({ itemId, noDocument }: Props) => {
   const host = useRef<HTMLDivElement>(null);
-  const [statusHost, setStatusHost] = useState<HTMLElement | null>(null);
   const [markup, setMarkup] = useState<string | null>(null);
-
-  // Mount the shared status badge beside the filename in the embedded viewer.
-  useEffect(() => {
-    const name = host.current?.querySelector<HTMLElement>("#preview-name");
-    if (!name) return;
-    const slot = document.createElement("span");
-    slot.style.cssText = "flex-shrink:0;margin-right:auto;display:inline-flex";
-    const previousFlex = name.style.flex;
-    name.style.flex = "0 1 auto";
-    name.after(slot);
-    setStatusHost(slot);
-    return () => {
-      name.style.flex = previousFlex;
-      slot.remove();
-    };
-  }, [markup]);
 
   // The stylesheet is document-wide and identical for every bill, so it is
   // added once and never removed — re-adding it per bill would restyle the
@@ -137,23 +116,16 @@ const ApSheet = ({ itemId, status, noDocument }: Props) => {
   }, [markup, itemId]);
 
   return (
-    <>
-      <div
-        ref={host}
-        className={cn(
-          "ap-sheet min-h-0 flex-1 overflow-auto",
-          noDocument && "[&_.doc-pane]:!hidden [&_.splitter]:!hidden"
-        )}
-        // The sheet's own markup, verbatim. It is generated from a file in this
-        // repo, never from user or network content.
-        dangerouslySetInnerHTML={markup ? { __html: markup } : undefined}
-      />
-      {statusHost &&
-        createPortal(
-          <StatusPill status={status} className="shrink-0" />,
-          statusHost
-        )}
-    </>
+    <div
+      ref={host}
+      className={cn(
+        "ap-sheet min-h-0 flex-1 overflow-auto",
+        noDocument && "[&_.doc-pane]:!hidden [&_.splitter]:!hidden"
+      )}
+      // The sheet's own markup, verbatim. It is generated from a file in this
+      // repo, never from user or network content.
+      dangerouslySetInnerHTML={markup ? { __html: markup } : undefined}
+    />
   );
 };
 
