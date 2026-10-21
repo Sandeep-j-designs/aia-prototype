@@ -10,14 +10,9 @@ import { PanelLeftOpen } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import NeoNav from "./nav";
 
-export type NeoPageId = "chat" | "skills" | "attention" | "activity";
+export type NeoPageId = "chat" | "skills";
 
-export const NEO_PAGES: NeoPageId[] = [
-  "chat",
-  "skills",
-  "attention",
-  "activity",
-];
+export const NEO_PAGES: NeoPageId[] = ["chat", "skills"];
 
 export const neoHref = (page: NeoPageId) =>
   page === "chat" ? "/inbox?module=NEO" : `/inbox?module=NEO&page=${page}`;
@@ -25,8 +20,6 @@ export const neoHref = (page: NeoPageId) =>
 const PAGE_TITLE: Record<NeoPageId, string> = {
   chat: "Chat",
   skills: "Skills",
-  attention: "Needs attention",
-  activity: "Activity",
 };
 
 /** Opens Neo's column as a sheet, where there's no room to keep it open. */
@@ -58,8 +51,7 @@ type Props = { page: NeoPageId; children: ReactNode };
 
 /**
  * Neo as a place (19 Oct 2026): the app rail folds to icons and Neo's own
- * column takes its place — Chat, Agents, Needs attention, Activity and the
- * recent chats. The docked panel stays for asking from any other screen; it
+ * column takes its place — Chat, Skills and the recent chats. The docked panel stays for asking from any other screen; it
  * holds the same conversation.
  *
  * Below 1024px the column would leave the chat a sliver, so it becomes a

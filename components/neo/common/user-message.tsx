@@ -5,11 +5,9 @@ import {
   ChevronRight,
   Copy,
   FileText,
-  Inbox,
   Pencil,
 } from "@/components/icons";
 import type { NeoMessage } from "@/types/pages/neo";
-import { useStore } from "@/components/inbox/v2/store";
 import { cn } from "@/lib/utils";
 import { IconAction } from "./turn-actions";
 
@@ -44,10 +42,6 @@ const UserMessage = ({
   const [tall, setTall] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [allFiles, setAllFiles] = useState(false);
-  const { items } = useStore();
-  const records = (m.records || [])
-    .map((id) => items.find((x) => x.id === id))
-    .filter(Boolean) as typeof items;
   const body = useRef<HTMLParagraphElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
 
@@ -122,24 +116,6 @@ const UserMessage = ({
 
   return (
     <div className="group/user ml-10 flex flex-col items-end gap-1.5 self-end">
-      {records.length > 0 && (
-        <ul aria-label="Picked from Inbox" className="flex flex-wrap justify-end gap-1.5">
-          {records.slice(0, records.length > 4 ? 3 : 4).map((x) => (
-            <li
-              key={x.id}
-              className="flex max-w-[13rem] items-center gap-1.5 rounded-full border border-pi-brand-border bg-pi-brand-tint py-1 pl-2 pr-2.5 text-[12px] text-pi-ink"
-            >
-              <Inbox className="h-3.5 w-3.5 flex-none text-pi-brand" />
-              <span className="truncate">{x.form.party || x.file.name}</span>
-            </li>
-          ))}
-          {records.length > 4 && (
-            <li className="flex items-center rounded-full border border-pi-line px-2.5 py-1 text-[12px] text-pi-body">
-              +{records.length - 3} more
-            </li>
-          )}
-        </ul>
-      )}
       {m.attachments && m.attachments.length > 0 && (
         <ul
           aria-label="Attached files"

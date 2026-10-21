@@ -6,6 +6,8 @@ import {
   Loader2,
 } from "@/components/icons";
 import type { NeoRef, NeoStep } from "@/types/pages/neo";
+import type { NeoStepBy } from "@/types/pages/neo/skills";
+import { skillById } from "@/config/pages/neo/skills";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -38,6 +40,25 @@ const Icon = ({ s }: { s: NeoStep }) =>
     <CircleCheck className="mt-[3px] h-3.5 w-3.5 flex-none text-pi-faint" />
   );
 
+/**
+ * Who did the step, after its label: the skill (model work) by its id, the
+ * tool (code) by its name. Names in full on hover and for screen readers.
+ */
+const By = ({ by }: { by: NeoStepBy }) => {
+  const names = [
+    ...(by.skills || []).map((id) => `${id} ${skillById(id).name}`),
+    ...(by.tools || []),
+  ];
+  return (
+    <span className="ml-1.5 text-pi-faint" title={names.join(" · ")}>
+      <span aria-hidden className="code text-[11.5px]">
+        {[...(by.skills || []), ...(by.tools || [])].join(" · ")}
+      </span>
+      <span className="sr-only">by {names.join(", ")}</span>
+    </span>
+  );
+};
+
 const Line = ({ s, onRef }: { s: NeoStep; onRef: Props["onRef"] }) => (
   <li
     className={cn(
@@ -51,6 +72,7 @@ const Line = ({ s, onRef }: { s: NeoStep; onRef: Props["onRef"] }) => (
       <span className={cn(s.status === "running" && "neo-shimmer")}>
         {s.label}
       </span>
+      {s.by && <By by={s.by} />}
       {s.cite && (
         <button
           type="button"

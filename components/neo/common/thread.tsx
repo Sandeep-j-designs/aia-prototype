@@ -82,20 +82,6 @@ const sourcesOf = (messages: NeoMessage[]): NeoRef[] => {
   messages.forEach((m) => {
     m.steps?.forEach((s) => add(s.cite));
     m.links?.forEach(add);
-    const c = m.card;
-    if (!c) return;
-    if (c.kind === "list")
-      c.groups.forEach((g) =>
-        g.rows.forEach((r) => add({ label: r.primary, itemId: r.itemId }))
-      );
-    if (c.kind === "voucher") {
-      add(c.source);
-      c.evidence?.forEach(add);
-    }
-    if (c.kind === "diff")
-      c.rows.forEach((r) => add({ label: r.party, itemId: r.itemId }));
-    if (c.kind === "changeset")
-      c.rows.forEach((r) => add({ label: r.label, itemId: r.itemId }));
   });
   return [...out.values()];
 };

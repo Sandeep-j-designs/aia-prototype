@@ -36,7 +36,11 @@ const reconSetup: NeoTask = {
       return "Not a POS client";
     }
 
-    const reading = await api.step("Reading Jun–Aug vouchers in your Tally");
+    const reading = await api.step(
+      "Reading Jun–Aug vouchers in your Tally",
+      undefined,
+      { skills: ["S3"], tools: ["books.vouchers"] }
+    );
     await api.wait(900);
     const policy = draftPolicy(company);
     const counts = policy.rows.reduce<Record<string, number>>(

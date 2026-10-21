@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from "react";
 import {
-  CircleAlert,
   History,
   PanelLeftClose,
   PanelLeftOpen,
@@ -9,7 +8,6 @@ import {
   NeoStar,
   Pencil,
   Plus,
-  ScrollText,
   Search,
   Star,
   Trash2,
@@ -26,7 +24,6 @@ import {
 import type { NeoChat } from "@/types/pages/neo";
 import { exportChat } from "./chat-title";
 import { useNeo } from "@/hooks/pages/neo/use-neo";
-import { useCompanyBrief } from "@/hooks/pages/neo/use-firm-brief";
 import { cn } from "@/lib/utils";
 import { DEMO_TODAY } from "@/utils/pages/inbox/ai-calculations";
 import type { NeoPageId } from "./index";
@@ -46,8 +43,6 @@ const ICON_BTN =
 const ITEMS: { id: NeoPageId; label: string; icon: typeof NeoStar }[] = [
   { id: "chat", label: "Chat", icon: NeoStar },
   { id: "skills", label: "Skills", icon: Wand2 },
-  { id: "attention", label: "Needs attention", icon: CircleAlert },
-  { id: "activity", label: "Activity", icon: ScrollText },
 ];
 
 const ROW =
@@ -71,18 +66,13 @@ const groupOf = (iso: string, now = DEMO_TODAY) => {
 const GROUPS = ["Starred", "Today", "Yesterday", "Previous 7 days", "Older"];
 
 /**
- * Neo's own column, beside the app's icon rail: a new chat, Neo's four
+ * Neo's own column, beside the app's icon rail: a new chat, Neo's two
  * places, and the conversations so far — starred first, then by day, with a
  * search over titles and messages. Each chat has a ⋯ menu on hover: Star,
  * Rename, Export, Delete. Opening one carries it on.
  */
 const NeoNav = ({ page, onPage, folded, onToggle }: Props) => {
   const neo = useNeo();
-  const { client } = useCompanyBrief();
-  // What the brief marks as needing a person, in this company.
-  const attention = client
-    ? client.signals.filter((s) => s.tone !== "neutral").length
-    : 0;
   const busy = !!neo.busy;
   const [query, setQuery] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -149,11 +139,6 @@ const NeoNav = ({ page, onPage, folded, onToggle }: Props) => {
               )}
             >
               <it.icon className="h-4 w-4" />
-              {it.id === "attention" && attention > 0 && (
-                <span className="absolute right-1 top-1 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-primary px-0.5 text-[9px] font-semibold tabular-nums text-primary-foreground">
-                  {attention}
-                </span>
-              )}
             </button>
           );
         })}
@@ -254,11 +239,6 @@ const NeoNav = ({ page, onPage, folded, onToggle }: Props) => {
                     )}
                   />
                   <span className="flex-1 truncate">{it.label}</span>
-                  {it.id === "attention" && attention > 0 && (
-                    <span className="grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-[11px] font-semibold tabular-nums text-primary-foreground">
-                      {attention}
-                    </span>
-                  )}
                 </button>
               </li>
             );

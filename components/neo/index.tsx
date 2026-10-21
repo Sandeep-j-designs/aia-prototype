@@ -42,8 +42,8 @@ const ICON_BUTTON =
 /**
  * Neo, docked: the same chat as Neo's page, made small and set beside the
  * work (19 Oct 2026, "one Neo, two sizes"). It is for asking about what is
- * on screen — this bill, these rows — so its empty state offers only that;
- * the greeting, agents, findings and the task history live on Neo's page.
+ * on screen, and its empty state offers the next reconciliation job; the
+ * greeting, the skills and past chats live on Neo's page.
  * Expand opens the page on this chat, carrying its "this".
  *
  * Its left edge drags it wider (384–560px). A document Neo makes opens to
@@ -303,7 +303,7 @@ const NeoPanel = () => {
                 }
                 className="mt-5 inline-flex items-center gap-1 rounded-sm text-[13px] font-medium text-pi-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border"
               >
-                Open Neo for agents, findings and history
+                Open Neo for its skills and past chats
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>

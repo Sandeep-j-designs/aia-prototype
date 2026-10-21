@@ -8,20 +8,15 @@ import React, {
 } from "react";
 import {
   ArrowUp,
-  CornerDownLeft,
   FileStack,
   FileText,
-  Inbox,
   Plus,
   Slash,
   Square,
   Upload,
-  UserRound,
   X,
 } from "@/components/icons";
-import { useStore } from "@/components/inbox/v2/store";
 import { useNeo } from "@/hooks/pages/neo/use-neo";
-import InboxPicker from "./inbox-picker";
 import { NEO_COMMANDS } from "@/config/pages/neo/suggestions";
 import type { NeoAttachment, NeoDecisionItem } from "@/types/pages/neo";
 import { cn } from "@/lib/utils";
@@ -36,28 +31,29 @@ type Props = {
   onSend: () => void;
   onStop: () => void;
   onAttachFiles: (files: FileList) => void;
-  onAttachSample: (which?: "bills" | "recon") => void;
+  onAttachSample: () => void;
   onRemoveAttachment: (name: string) => void;
   /** "page" is the wider box on Neo's page; "panel" the docked one. */
   variant?: "panel" | "page";
   placeholder?: string;
   /** Sits in the toolbar beside +: what "this" is (the context pill). */
   context?: React.ReactNode;
+  /** The box sits near the top (Neo's empty home): the / menu opens below. */
+  menuBelow?: boolean;
 };
 
 type Pick = { id: string; label: string; hint?: string; insert: string };
 
 /**
  * Where you ask (19 Oct 2026, the chat apps' prompt box): the text on top,
- * growing as you write; a toolbar underneath with + for bills, what Neo is
- * looking at, and send — which becomes stop while Neo works.
+ * growing as you write; a toolbar underneath with + for reports, what Neo
+ * is looking at, and send — which becomes stop while Neo works.
  *
- * Typing @ names a vendor or customer from the books; / at the start offers
- * Neo's kinds of work. ↑ in an empty box edits your last request. Enter
- * sends, Shift+Enter breaks the line.
+ * / at the start offers Neo's jobs. ↑ in an empty box edits your last
+ * request. Enter sends, Shift+Enter breaks the line.
  *
- * Bills go in here too: + attaches files (or the prototype's sample batch),
- * they sit as tiles above the text, and they go with the message.
+ * Reports go in here too: + attaches files (or the prototype's sample
+ * reports), they sit as tiles above the text, and they go with the message.
  */
 const Composer = forwardRef<HTMLTextAreaElement, Props>(
   (
@@ -74,10 +70,10 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
       variant = "panel",
       placeholder,
       context,
+      menuBelow,
     },
     ref
   ) => {
-    const state = useStore();
     const neo = useNeo();
     const live = useLiveMessage(neo);
     const [typed, setTyped] = useState<{ text: string; n: number }>();
@@ -86,10 +82,6 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
     const answering = !!neo.textAsk;
     const signOff = live?.actions?.find((a) => a.primary);
     const [menu, setMenu] = useState(false);
-    const [picking, setPicking] = useState(false);
-    const records = neo.picked
-      .map((id) => state.items.find((x) => x.id === id))
-      .filter(Boolean) as typeof state.items;
     const [caret, setCaret] = useState(0);
     const [active, setActive] = useState(0);
     const [dismissed, setDismissed] = useState<string | null>(null);
@@ -107,42 +99,11 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
       return () => window.removeEventListener("mousedown", close);
     }, [menu]);
 
-    // The vendors and customers the books know, for @.
-    const parties = useMemo(
-      () =>
-        [
-          ...new Set(
-            state.items
-              .filter((x) => x.company === state.company && x.form.party)
-              .map((x) => x.form.party)
-          ),
-        ].sort(),
-      [state.items, state.company]
-    );
-
-    // What the caret is in the middle of: "@blue", or "/sp" at the start.
+    // What the caret is in the middle of: "/re" at the start.
     const before = value.slice(0, caret);
-    const mention = before.match(/(^|\s)@([^@\n]{0,30})$/);
     const command = before.match(/^\/(\w*)$/);
-    const trigger = mention
-      ? `@${mention[2]}`
-      : command
-        ? `/${command[1]}`
-        : null;
+    const trigger = command ? `/${command[1]}` : null;
     const picks: Pick[] = useMemo(() => {
-      if (mention) {
-        const q = mention[2].toLowerCase();
-        // Names that start with what was typed come first.
-        return parties
-          .filter((p) => p.toLowerCase().includes(q))
-          .sort(
-            (a, b) =>
-              Number(!a.toLowerCase().startsWith(q)) -
-              Number(!b.toLowerCase().startsWith(q))
-          )
-          .slice(0, 6)
-          .map((p) => ({ id: p, label: p, insert: p }));
-      }
       if (command) {
         const q = command[1].toLowerCase();
         return NEO_COMMANDS.filter(
@@ -155,22 +116,14 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
         }));
       }
       return [];
-    }, [mention, command, parties]);
+    }, [command]);
     const open = !!trigger && trigger !== dismissed && picks.length > 0;
     useEffect(() => setActive(0), [trigger]);
 
     const choose = (p: Pick) => {
       const f = field.current;
-      let next: string;
-      let at: number;
-      if (mention) {
-        const start = caret - mention[2].length - 1;
-        next = `${value.slice(0, start)}${p.insert} ${value.slice(caret)}`;
-        at = start + p.insert.length + 1;
-      } else {
-        next = p.insert + value.slice(caret);
-        at = p.insert.length;
-      }
+      const next = p.insert + value.slice(caret);
+      const at = p.insert.length;
       onChange(next);
       setCaret(at);
       window.setTimeout(() => {
@@ -182,9 +135,7 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
     const canSend = answering
       ? !!value.trim()
       : !!value.trim() || attachments.length > 0;
-    const placeholderText = records.length
-      ? `What should Neo do with ${records.length === 1 ? "this document" : `these ${records.length}`}?`
-      : null;
+    const placeholderText = null;
     const page = variant === "page";
 
     // Neo is asking: its questions rise out of the top of the prompt box,
@@ -227,11 +178,16 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
           {open && (
             <div
               role="listbox"
-              aria-label={mention ? "Vendors and customers" : "Commands"}
-              className="absolute inset-x-2 bottom-full z-20 mb-2 overflow-hidden rounded-lg border border-pi-line bg-background py-1 shadow-popover-shadow duration-150 animate-in fade-in-0 slide-in-from-bottom-1"
+              aria-label="Commands"
+              className={cn(
+                "absolute inset-x-2 z-20 overflow-hidden rounded-lg border border-pi-line bg-background py-1 shadow-popover-shadow duration-150 animate-in fade-in-0",
+                menuBelow
+                  ? "top-full mt-2 slide-in-from-top-1"
+                  : "bottom-full mb-2 slide-in-from-bottom-1"
+              )}
             >
               <p className="px-3 pb-1 pt-1.5 text-body-4 font-semibold text-pi-faint">
-                {mention ? "Vendors and customers" : "What Neo can do"}
+                What Neo can do
               </p>
               {picks.map((p, i) => (
                 <button
@@ -249,11 +205,7 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
                     i === active && "bg-pi-fill"
                   )}
                 >
-                  {mention ? (
-                    <UserRound className="h-3.5 w-3.5 flex-none text-pi-body" />
-                  ) : (
-                    <Slash className="h-3.5 w-3.5 flex-none text-pi-body" />
-                  )}
+                  <Slash className="h-3.5 w-3.5 flex-none text-pi-body" />
                   <span className="min-w-0 flex-1 truncate">{p.label}</span>
                   {p.hint && (
                     <span className="code text-body-4 text-pi-faint">
@@ -263,43 +215,6 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
                 </button>
               ))}
             </div>
-          )}
-
-          {records.length > 0 && (
-            <ul
-              aria-label="Picked from Inbox"
-              className="flex max-h-[7.5rem] flex-wrap gap-2 overflow-y-auto px-3 pt-3"
-            >
-              {records.map((x) => (
-                <li
-                  key={x.id}
-                  className="group/file relative flex w-44 items-center gap-2 rounded-lg border border-pi-brand-border bg-pi-brand-tint py-1.5 pl-1.5 pr-2 duration-150 animate-in fade-in-0 zoom-in-95"
-                >
-                  <span className="grid h-8 w-8 flex-none place-items-center rounded-sm bg-background text-pi-brand">
-                    <Inbox className="h-4 w-4" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-[12px] font-medium leading-4 text-pi-ink">
-                      {x.form.party || x.file.name}
-                    </span>
-                    <span className="block truncate text-[11px] leading-4 text-pi-body">
-                      {x.form.invoiceNo || x.id} · {x.status}
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${x.form.party || x.file.name}`}
-                    disabled={busy}
-                    onClick={() =>
-                      neo.pickRecords(neo.picked.filter((id) => id !== x.id))
-                    }
-                    className="absolute -right-1.5 -top-1.5 grid size-5 place-items-center rounded-full border border-pi-line bg-background text-pi-body opacity-0 shadow-contact transition-opacity hover:text-pi-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border group-hover/file:opacity-100"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </li>
-              ))}
-            </ul>
           )}
 
           {attachments.length > 0 && (
@@ -409,8 +324,7 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
                           ? placeholderText
                           : attachments.length
                             ? "What should Neo know about these?"
-                            : placeholder ||
-                              "Ask Neo, or type / for a skill"
+                            : placeholder || "Ask Neo, or type / for a job"
             }
             className={cn(
               "block w-full resize-none bg-transparent px-4 text-pi-ink placeholder:text-pi-faint focus-visible:outline-none [field-sizing:content]",
@@ -451,10 +365,10 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
                     <Upload className="mt-0.5 h-4 w-4 flex-none text-pi-body" />
                     <span>
                       <span className="block text-[13px] text-pi-ink">
-                        Upload bills
+                        Upload reports
                       </span>
                       <span className="block text-body-4 text-pi-body">
-                        PDF, JPG or PNG. Or drop them anywhere here
+                        POS, settlement and bank statements. Or drop them here
                       </span>
                     </span>
                   </button>
@@ -463,45 +377,7 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
                     role="menuitem"
                     onClick={() => {
                       setMenu(false);
-                      setPicking(true);
-                    }}
-                    className="flex w-full items-start gap-2.5 rounded-sm px-2.5 py-2 text-left hover:bg-pi-fill focus-visible:bg-pi-fill focus-visible:outline-none"
-                  >
-                    <Inbox className="mt-0.5 h-4 w-4 flex-none text-pi-body" />
-                    <span>
-                      <span className="block text-[13px] text-pi-ink">
-                        Pick from Inbox
-                      </span>
-                      <span className="block text-body-4 text-pi-body">
-                        Documents already in your books
-                      </span>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenu(false);
-                      onAttachSample("bills");
-                    }}
-                    className="flex w-full items-start gap-2.5 rounded-sm px-2.5 py-2 text-left hover:bg-pi-fill focus-visible:bg-pi-fill focus-visible:outline-none"
-                  >
-                    <FileStack className="mt-0.5 h-4 w-4 flex-none text-pi-body" />
-                    <span>
-                      <span className="block text-[13px] text-pi-ink">
-                        Sample: 10 Harihar plant bills
-                      </span>
-                      <span className="block text-body-4 text-pi-body">
-                        September freight, courier and packing
-                      </span>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenu(false);
-                      onAttachSample("recon");
+                      onAttachSample();
                     }}
                     className="flex w-full items-start gap-2.5 rounded-sm px-2.5 py-2 text-left hover:bg-pi-fill focus-visible:bg-pi-fill focus-visible:outline-none"
                   >
@@ -522,7 +398,7 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
                 id="neo-attach"
                 type="file"
                 multiple
-                accept=".pdf,.png,.jpg,.jpeg"
+                accept=".pdf,.csv,.xls,.xlsx"
                 className="sr-only"
                 tabIndex={-1}
                 onChange={(e) => {
@@ -532,32 +408,7 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
               />
             </div>
             <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              {neo.frame && (
-                <span
-                  className="flex h-7 min-w-0 items-center gap-1 rounded-full border border-pi-brand-border bg-pi-brand-tint pl-2.5 pr-1 text-[12px] text-pi-ink"
-                  title={`Follow-ups read as about ${neo.frame.label}. × starts a new topic.`}
-                >
-                  <CornerDownLeft
-                    aria-hidden
-                    className="h-3 w-3 flex-none -scale-x-100 text-pi-brand"
-                  />
-                  <span className="sr-only">Following on from</span>
-                  <span className="truncate font-medium">
-                    {neo.frame.label}
-                  </span>
-                  <button
-                    type="button"
-                    aria-label="New topic"
-                    disabled={busy}
-                    onClick={neo.clearFrame}
-                    className="grid h-5 w-5 flex-none place-items-center rounded-full text-pi-body hover:bg-background hover:text-pi-ink disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              )}
-              {/* Picked documents are "this" now; their tiles say so. */}
-              {records.length ? null : context}
+              {context}
             </div>
             {busy && !answering && !(asking && value.trim()) ? (
               <button
@@ -583,15 +434,6 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
             )}
           </div>
         </div>
-        <InboxPicker
-          open={picking}
-          onOpenChange={(o) => {
-            setPicking(o);
-            if (!o) window.setTimeout(() => field.current?.focus(), 0);
-          }}
-          value={neo.picked}
-          onPick={neo.pickRecords}
-        />
       </div>
     );
   }

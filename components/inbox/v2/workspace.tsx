@@ -212,18 +212,11 @@ import {
   useGridKeyboard,
 } from "@/hooks/pages/inbox/use-grid-keyboard";
 import KeyboardShortcuts from "./keyboard-shortcuts";
-import Agents from "@/components/agents";
-import CollectionDocumentIssue from "@/components/inbox/v2/sources/document-issue";
 import PreparedTag from "@/components/neo/common/prepared-tag";
-import Brief from "@/components/neo/brief";
 import NeoPage, { NEO_PAGES, type NeoPageId } from "@/components/neo/page";
 import NeoChat from "@/components/neo/page/chat";
 import NeoSkills from "@/components/neo/page/skills";
 import ChatTitle from "@/components/neo/page/chat-title";
-import NeoActivity from "@/components/neo/page/activity";
-import NeoOffers from "@/components/neo/offers";
-import BatchStrip from "@/components/neo/batch-strip";
-import ChaseBanner from "@/components/neo/chase-banner";
 import { setNeoSelection } from "@/utils/pages/neo/selection";
 import type { Crumb } from "@/components/top-bar-layout";
 const money = (n: number) =>
@@ -1342,24 +1335,15 @@ export default function Workspace() {
   /** GST reconciliation at ?module=GST, its results tab in &tab=. */
   const gstModule = router.query.module === "GST";
   /*
-    Neo is one place (ported from AIA 2.0): Chat, Skills, Needs attention and
-    Activity. Document collection's own screens (?module=AGENTS&page=…) sit
-    under Skills; ?page=agents still lands there.
+    Neo is one place: Chat and Skills (21 Oct 2026, phase one is three-way
+    reconciliation only). An old ?page= lands on the chat.
   */
-  const agentsModule = router.query.module === "AGENTS";
   const neoModule = router.query.module === "NEO";
-  const neoPage: NeoPageId | undefined = agentsModule
-    ? "skills"
-    : neoModule
-      ? router.query.page === "agents"
-        ? "skills"
-        : NEO_PAGES.includes(router.query.page as NeoPageId)
-          ? (router.query.page as NeoPageId)
-          : "chat"
-      : undefined;
-  // A Neo batch's drafts, from its "Review in Inbox".
-  const batchFilter =
-    typeof router.query.batch === "string" ? router.query.batch : "";
+  const neoPage: NeoPageId | undefined = neoModule
+    ? NEO_PAGES.includes(router.query.page as NeoPageId)
+      ? (router.query.page as NeoPageId)
+      : "chat"
+    : undefined;
   const gstView: GstView = {
     tab: (["summary", "month", "vendor", "invoice"] as const).includes(
       router.query.tab as GstTab
@@ -1578,12 +1562,6 @@ export default function Workspace() {
   useEffect(() => {
     setNeoSelection(selected);
   }, [selected]);
-  useEffect(() => {
-    if (router.query.sources === "1")
-      void router.replace(
-        "/inbox?module=AGENTS&page=document-collection&tab=configuration"
-      );
-  }, [router.query.sources]);
   const searchInput = useRef<HTMLInputElement | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const filtered = useMemo(
@@ -1598,9 +1576,6 @@ export default function Workspace() {
         // sits outside the filter panel because it is about the run, not about
         // the documents, and it clears itself when the next run starts.
         .filter((x) => !sync.reviewingFailures || sync.failedSyncIds.has(x.id))
-        // A Neo batch's drafts, from its "Review in Inbox": the list is the
-        // batch, so Approve & Next walks it and nothing else.
-        .filter((x) => !batchFilter || x.batch?.id === batchFilter)
         .filter(
           (x) =>
             (!filters.from || x.received.slice(0, 10) >= filters.from) &&
@@ -1635,7 +1610,6 @@ export default function Workspace() {
       sort,
       sync.reviewingFailures,
       sync.failedSyncIds,
-      batchFilter,
     ]
   );
 
@@ -1997,16 +1971,16 @@ export default function Workspace() {
   const navId = neoPage
     ? "neo"
     : gstModule
-    ? "gst"
-    : coaModule
-      ? "chart-of-accounts"
-      : inventoryModule
-        ? "inventory"
-        : bankModule
-          ? "banking"
-          : moduleRoute
-            ? ROUTE_TO_NAV[moduleRoute]
-            : "inbox";
+      ? "gst"
+      : coaModule
+        ? "chart-of-accounts"
+        : inventoryModule
+          ? "inventory"
+          : bankModule
+            ? "banking"
+            : moduleRoute
+              ? ROUTE_TO_NAV[moduleRoute]
+              : "inbox";
   const selectNav = (navItemId: string) => {
     if (navItemId === "neo") {
       void router.push("/inbox?module=NEO");
@@ -2072,32 +2046,14 @@ export default function Workspace() {
     if (!quiet)
       notify(`Switched to ${companyOf(value)?.name ?? "organisation"}`);
   };
-  /** Neo's Needs attention: switch to the signal's company, then go there. */
-  const openIn = (companyId: string, href: string) => {
-    if (companyId !== state.company) {
-      configure({ company: companyId, queue: [], queueFrom: undefined });
-      setSelected([]);
-      setFilters(defaultFilters);
-      setTab("Need review");
-      notify(`Switched to ${companyOf(companyId)?.name ?? "organisation"}`);
-    }
-    void router.push(href);
-  };
   /* Neo's pages name themselves in the top bar's trail; the chat's crumb is
      its title menu. */
   const pageCrumbs: Crumb[] | undefined = neoPage
     ? [
         "Neo",
-        router.query.page === "document-collection"
-          ? "Document collection"
-          : neoPage === "chat"
-            ? { label: "Chat", node: <ChatTitle compact onBar /> }
-            : {
-                chat: "Chat",
-                skills: "Skills",
-                attention: "Needs attention",
-                activity: "Activity",
-              }[neoPage],
+        neoPage === "chat"
+          ? { label: "Chat", node: <ChatTitle compact onBar /> }
+          : "Skills",
       ]
     : undefined;
   /** A new organisation becomes the active one, as production's create does. */
@@ -3202,10 +3158,6 @@ export default function Workspace() {
                   </>
                 )}
               </div>
-              <CollectionDocumentIssue key={item.id} item={item} />
-              {item.status === "Approved" && !approvedEditing && (
-                <ChaseBanner item={item} />
-              )}
               {item.status === "Approved" && !approvedEditing ? (
                 <>
                   {/*
@@ -3393,7 +3345,6 @@ export default function Workspace() {
                       approving.
                     </RecordBanner>
                   )}
-                  <ChaseBanner item={item} />
                   {/*
                     Three layouts, and which one a route gets is decided by one
                     thing: whether its sheet draws the source document itself.
@@ -3565,21 +3516,6 @@ export default function Workspace() {
             <NeoPage page={neoPage}>
               {neoPage === "chat" ? (
                 <NeoChat />
-              ) : neoPage === "attention" ? (
-                <Brief onOpen={openIn} />
-              ) : neoPage === "activity" ? (
-                <NeoActivity
-                  key={state.company}
-                  company={state.company}
-                  user={actor}
-                  onOpenDocument={(docId) =>
-                    void router.push(detailHref(docId))
-                  }
-                  notify={notify}
-                />
-              ) : agentsModule &&
-                router.query.page === "document-collection" ? (
-                <Agents key={state.company} company={state.company} />
               ) : (
                 <NeoSkills key={state.company} company={state.company} />
               )}
@@ -3876,15 +3812,6 @@ export default function Workspace() {
                       }
                       onPrimaryButtonClick={openSingleUpload}
                     />
-                    {!moduleRoute && batchFilter && (
-                      <BatchStrip
-                        id={batchFilter}
-                        onClear={() => void router.push("/inbox")}
-                      />
-                    )}
-                    {!moduleRoute && !batchFilter && (
-                      <NeoOffers company={state.company} />
-                    )}
                     {!moduleRoute && (
                       <Tabs
                         value={tab}

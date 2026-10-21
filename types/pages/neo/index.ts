@@ -1,4 +1,4 @@
-import type { CollectionDryRunRow } from "@/types/pages/inbox/sources";
+import type { NeoStepBy } from "@/types/pages/neo/skills";
 
 /**
  * Neo — the in-app agent.
@@ -45,6 +45,8 @@ export type NeoStep = {
   label: string;
   status: NeoStepStatus;
   cite?: NeoRef;
+  /** The skill or tool that did the step (types/pages/neo/skills.ts). */
+  by?: NeoStepBy;
   /** Epoch ms the step started and landed, for "Worked for 1.4s". */
   startedAt?: number;
   endedAt?: number;
@@ -112,82 +114,6 @@ export type NeoTone = "neutral" | "positive" | "notice" | "negative";
 
 export type NeoCard =
   | {
-      kind: "voucher";
-      voucherType: string;
-      state: "Preview" | "Draft created";
-      voucherNo: string;
-      party: string;
-      date: string;
-      lines: NeoVoucherLine[];
-      why?: string;
-      source?: NeoRef;
-      company?: string;
-      assumptions?: string[];
-      evidence?: NeoRef[];
-      items?: { description: string; cost: number; amount: number }[];
-    }
-  | {
-      kind: "list";
-      title: string;
-      /**
-       * Set by a task whose list hands drafts over for review: the set's
-       * name ("Collection run"). Each listed bill then opens as a subtask
-       * of this chat (utils/pages/neo/review-sets.ts).
-       */
-      review?: string;
-      groups: {
-        label: string;
-        tone: NeoTone;
-        rows: {
-          itemId: string;
-          primary: string;
-          secondary?: string;
-          amount?: number;
-        }[];
-      }[];
-    }
-  | {
-      kind: "diff";
-      title: string;
-      field: string;
-      rows: {
-        itemId: string;
-        party: string;
-        from: string;
-        to: string;
-        amount: number;
-      }[];
-    }
-  | {
-      /**
-       * Change by rule: one instruction over many records, signed off once.
-       * The person can untick rows; Neo pre-unticks the ones it doubts and
-       * says why. Applying it edits drafts only — approved records are never
-       * in the set, and are counted so the person knows they were left alone.
-       */
-      kind: "changeset";
-      title: string;
-      /** The rule in words: "vendor = Mahindra Logistics Ltd · ledger = …". */
-      rule: string;
-      field: "Ledger" | "Cost centre";
-      /** "Move" or "Tag" — the verb on the sign-off button. */
-      verb: string;
-      company: string;
-      /** Records the rule matched that are approved, so left untouched. */
-      approvedSkipped: number;
-      rows: NeoChangeRow[];
-    }
-  | {
-      /**
-       * A batch of vouchers Neo is entering (Neo voucher entry). The card
-       * draws the batch from its store, so what it shows is always the
-       * batch as it stands; `view` is which step this card is.
-       */
-      kind: "batch";
-      batchId: string;
-      view: "settings" | "register" | "drafts";
-    }
-  | {
       /**
        * Three-way reconciliation (20 Oct 2026). The card reads the policy
        * or the run live from the recon store; `view` is which step it is.
@@ -207,96 +133,11 @@ export type NeoCard =
         | "rules";
     }
   | {
-      /**
-       * Document Collection's setup card. It reads the setup live from the
-       * collection store (the draft while setting up, the saved one after),
-       * so a field edited on the card and an answer in the chat land in the
-       * same place.
-       */
-      kind: "collection-setup";
-      company: string;
-    }
-  | {
-      /**
-       * What collecting would do over the backfill, with nothing created.
-       * Live while setting up; `rows` freezes it once the setup is saved.
-       */
-      kind: "collection-dry-run";
-      company: string;
-      rows?: CollectionDryRunRow[];
-    }
-  | {
-      /**
-       * An agent Neo set up with the person (Neo › Agents). What it watches,
-       * when it runs and how far it may go — never further than a draft.
-       */
-      kind: "agent";
-      agentId: string;
-      name: string;
-      description: string;
-      trigger: string;
-      permission: "flag" | "draft";
-      checks: string[];
-      state: "Preview" | "Saved as draft" | "Scheduled";
-    }
-  | {
       kind: "decisions";
       /** What the answers are for: "Before I draft September". */
       title: string;
       items: NeoDecisionItem[];
-    }
-  | {
-      kind: "message";
-      channel: "WhatsApp" | "Email";
-      to: string;
-      body: string;
-      /**
-       * WhatsApp outside a reply window goes as an approved template, so
-       * the wording is fixed except for its fields; the card says which.
-       */
-      template?: string;
-    }
-  | {
-      /**
-       * A long-running workflow, drawn as stages with live counters and a
-       * running log. Updated in place as the run moves.
-       */
-      kind: "pipeline";
-      title: string;
-      startedAt: number;
-      finishedAt?: number;
-      stages: NeoStage[];
-      log: NeoLogLine[];
     };
-
-export type NeoChangeRow = {
-  itemId: string;
-  label: string;
-  from: string;
-  to: string;
-  amount: number;
-  checked: boolean;
-  /** Why Neo left this one unticked. */
-  doubt?: string;
-};
-
-export type NeoStageStatus = "waiting" | "active" | "done" | "held";
-
-export type NeoStage = {
-  id: string;
-  label: string;
-  status: NeoStageStatus;
-  /** "4 clean · 1 duplicate · 1 blocked" — what the stage has found. */
-  detail?: string;
-};
-
-export type NeoLogLine = {
-  id: string;
-  at: number;
-  text: string;
-  itemId?: string;
-  tone?: NeoTone;
-};
 
 /** How Neo marks a row in the lists while a run is working on it. */
 export type NeoPresenceState = "working" | "done" | "held";
@@ -316,8 +157,6 @@ export type NeoMessage = {
   role: "user" | "neo";
   /** Files the user sent with this message. */
   attachments?: NeoAttachment[];
-  /** Inbox documents picked for this message (+ › Pick from Inbox). */
-  records?: string[];
   runId?: string;
   /**
    * The bill this message is about, when it was asked from that bill's
@@ -382,33 +221,6 @@ export type NeoRun = {
   undoable: boolean;
 };
 
-/**
- * What the conversation is about so far: the last answer's subject, period
- * and records, so a follow-up ("and August?", "move them to Freight
- * Inward") means what it would mean to a colleague. Shown as a chip in the
- * prompt box; × clears it, which is "new topic".
- *
- * DEV: with a model this is the conversation history it already sees; the
- * chip stays, as the visible statement of what Neo thinks "it" is.
- */
-export type NeoFrame = {
-  /** The task that set it. */
-  task: string;
-  company: string;
-  kind: "spend" | "top" | "overdue" | "masters" | "move" | "chase" | "freight";
-  vendor?: string;
-  ledger?: string;
-  /** A word searched across ledgers and descriptions: "freight". */
-  topic?: string;
-  period?: { phrase: string; label: string };
-  /** Only approved, or only waiting, records were counted. */
-  status?: "open" | "approved";
-  /** The records the answer was about. */
-  ids?: string[];
-  /** The chip: "Mahindra Logistics Ltd · September 2026". */
-  label: string;
-};
-
 /** What "this" means when the user types it. */
 export type NeoContext = {
   company?: string;
@@ -436,8 +248,6 @@ export type NeoTaskApi = {
   say: (text: string, links?: NeoRef[]) => Promise<void>;
   /** Offer follow-up requests as one-tap chips once the run is done. */
   suggest: (prompts: string[]) => void;
-  /** What this answer was about, for the next message to follow on from. */
-  remember: (frame: Omit<NeoFrame, "task" | "company">) => void;
   /**
    * A question answered in words, not picked: an amount, a phone number.
    * `parse` turns the reply into the value, or undefined to ask again with
@@ -452,7 +262,11 @@ export type NeoTaskApi = {
       retry?: string;
     }
   ) => Promise<string>;
-  step: (label: string, cite?: NeoRef) => Promise<(label?: string) => void>;
+  step: (
+    label: string,
+    cite?: NeoRef,
+    by?: NeoStepBy
+  ) => Promise<(label?: string) => void>;
   fail: (label: string) => void;
   ask: (question: string, options: NeoOption[]) => Promise<string>;
   card: (card: NeoCard, actions: NeoAction[]) => Promise<string>;

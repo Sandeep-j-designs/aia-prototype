@@ -1,6 +1,4 @@
 import { useEffect, useState } from "react";
-import { sampleFor } from "@/hooks/pages/neo/use-batches";
-import { MOCK_BATCH_DOCUMENTS } from "@/config/pages/neo/mock-batch-documents";
 import { RECON_SAMPLE_FILES } from "@/config/pages/neo/mock-recon";
 import type { NeoAttachment } from "@/types/pages/neo";
 import type { NeoRuntime } from "./use-neo-runtime";
@@ -10,7 +8,7 @@ import type { NeoRuntime } from "./use-neo-runtime";
  * draft, the files waiting to go with it, and sending both as one request.
  */
 /**
- * A request to finish rather than send ("Move all …"): put in the prompt box
+ * A request to finish rather than send: put in the prompt box
  * of whichever composer mounts next, then announced to one already open.
  */
 let pendingPrefill: string | null = null;
@@ -65,15 +63,10 @@ export const useComposer = (neo: NeoRuntime) => {
       attach(
         Array.from(files).map((f) => ({
           name: f.name,
-          docId: sampleFor(f.name)?.id,
         }))
       ),
-    attachSample: (which: "bills" | "recon" = "bills") =>
-      attach(
-        which === "recon"
-          ? RECON_SAMPLE_FILES.map((f) => ({ name: f.name }))
-          : MOCK_BATCH_DOCUMENTS.map((d) => ({ name: d.file.name, docId: d.id }))
-      ),
+    attachSample: () =>
+      attach(RECON_SAMPLE_FILES.map((f) => ({ name: f.name }))),
     removeAttachment: (name: string) =>
       setAttachments((as) => as.filter((a) => a.name !== name)),
   };

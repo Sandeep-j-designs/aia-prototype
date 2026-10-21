@@ -5,10 +5,11 @@ import { actor, useStore } from "@/components/inbox/v2/store";
 import { useNeo } from "@/hooks/pages/neo/use-neo";
 import { useComposer } from "@/hooks/pages/neo/use-composer";
 import {
-  NEO_EXAMPLE_GROUPS,
   todayFor,
+  unavailableFor,
   type TodayItem,
 } from "@/config/pages/neo/suggestions";
+import { JOBS } from "@/config/pages/neo/skills";
 import Shortcuts from "@/components/neo/common/shortcuts";
 import Canvas from "@/components/neo/common/canvas";
 import Composer from "@/components/neo/common/composer";
@@ -34,10 +35,10 @@ const DOT: Record<TodayItem["tone"], string> = {
 };
 
 /**
- * Neo › Chat. Empty, it is a home that leads with today's work at this
- * client, in the accountant's words — "₹7.6L of Q2 ITC at risk", "3
- * Mahindra Logistics bills sit on Transportation" — each one a request Neo
- * answers. Neo's full range is one quiet link below, grouped by the work.
+ * Neo › Chat. Empty, it is a home that leads with where three-way
+ * reconciliation stands at this client — "September reconciled, not
+ * closed" — each one a job Neo runs. The four jobs are one quiet link
+ * below. A client without POS sales is told why there's nothing here.
  * Once something is asked, the conversation runs down the middle with the
  * box pinned beneath; a document Neo makes opens beside it.
  */
@@ -59,6 +60,7 @@ const NeoChat = () => {
   }, [neo.chatId]);
 
   // What the books say needs doing here, as requests Neo answers.
+  const unavailable = unavailableFor(state.company);
   const today = useMemo(
     () => todayFor(state.company),
     // The store is a dependency: today's work follows the books.
@@ -99,6 +101,7 @@ const NeoChat = () => {
     <Composer
       ref={input}
       variant="page"
+      menuBelow={empty}
       value={box.draft}
       busy={!!neo.busy}
       attachments={box.attachments}
@@ -149,6 +152,14 @@ const NeoChat = () => {
             </div>
             <div className="mt-8 w-full max-w-[720px]">{composer}</div>
 
+            {unavailable && (
+              <p className="mt-8 w-full max-w-[720px] rounded-xl border border-pi-line bg-background px-4 py-3 text-[13px] leading-5 text-pi-body">
+                Neo reconciles POS sales, settlements and the bank in this
+                phase, and {company?.name} doesn&apos;t sell through POS or
+                platforms. To try it, switch to Nandhini Deluxe in the top bar.
+              </p>
+            )}
+
             {today.length > 0 && (
               <section
                 aria-labelledby="neo-today"
@@ -198,53 +209,54 @@ const NeoChat = () => {
             )}
 
             <div className="mt-5 w-full max-w-[720px]">
-              <button
-                type="button"
-                aria-expanded={examples}
-                onClick={() => setExamples((x) => !x)}
-                className="flex items-center gap-1 rounded-sm px-1 text-[13px] font-medium text-pi-body hover:text-pi-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border"
-              >
-                What can Neo do?
-                <ChevronDown
-                  className={cn(
-                    "h-3.5 w-3.5 transition-transform",
-                    examples && "rotate-180"
-                  )}
-                />
-              </button>
-              <Link
-                href="/inbox?module=NEO&page=skills"
-                className="float-right flex items-center gap-1 rounded-sm px-1 text-[13px] font-medium text-pi-body hover:text-pi-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border"
-              >
-                All skills
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  aria-expanded={examples}
+                  onClick={() => setExamples((x) => !x)}
+                  className="flex items-center gap-1 rounded-sm px-1 text-[13px] font-medium text-pi-body hover:text-pi-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border"
+                >
+                  What can Neo do?
+                  <ChevronDown
+                    className={cn(
+                      "h-3.5 w-3.5 transition-transform",
+                      examples && "rotate-180"
+                    )}
+                  />
+                </button>
+                <Link
+                  href="/inbox?module=NEO&page=skills"
+                  className="flex items-center gap-1 rounded-sm px-1 text-[13px] font-medium text-pi-body hover:text-pi-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border"
+                >
+                  How Neo works
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
               {examples && (
-                <div className="mt-3 grid gap-x-8 gap-y-5 rounded-xl border border-pi-line bg-background p-4 shadow-pi-1 duration-200 animate-in fade-in-0 slide-in-from-top-1 sm:grid-cols-2">
-                  {NEO_EXAMPLE_GROUPS.map((g) => (
-                    <section key={g.label}>
-                      <h4 className="mb-1 text-body-4 font-semibold text-pi-faint">
-                        {g.label}
-                      </h4>
-                      <ul>
-                        {g.prompts.map((p) => (
-                          <li key={p}>
-                            <button
-                              type="button"
-                              onClick={() => box.send(p)}
-                              className="w-full rounded-sm py-1 text-left text-[13px] leading-5 text-pi-ink-2 hover:text-pi-ink hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border"
-                            >
-                              {p}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    </section>
-                  ))}
-                  <p className="text-body-4 text-pi-body sm:col-span-2">
-                    Follow-ups carry on from the last answer: after a spend
-                    question, try “and August?” or “only the open ones”.
-                  </p>
+                <div className="mt-3 rounded-xl border border-pi-line bg-background px-4 py-2.5 shadow-pi-1 duration-200 animate-in fade-in-0 slide-in-from-top-1">
+                  <ul>
+                    {JOBS.map((j) => (
+                      <li key={j.id}>
+                        <button
+                          type="button"
+                          onClick={() => box.send(j.prompt)}
+                          className="flex w-full items-baseline gap-3 rounded-sm py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border"
+                        >
+                          <span className="code w-16 flex-none text-[12px] text-pi-faint">
+                            /{j.slash}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-[13px] font-medium leading-5 text-pi-ink hover:underline">
+                              {j.name}
+                            </span>
+                            <span className="block text-body-4 text-pi-body">
+                              {j.does}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
             </div>

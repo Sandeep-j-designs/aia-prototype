@@ -13,7 +13,6 @@ const KEYS: [string, string[]][] = [
   ["Send", ["Enter"]],
   ["New line", ["Shift", "Enter"]],
   ["Edit your last request", ["↑"]],
-  ["Name a vendor or customer", ["@"]],
   ["What Neo can do", ["/"]],
   ["Answer Neo's question", ["1–9"]],
   ["Take the main action (drafts only)", ["Ctrl", "Enter"]],
@@ -42,11 +41,16 @@ const Shortcuts = () => {
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Neo keyboard shortcuts</DialogTitle>
-          <DialogDescription>Press Ctrl / to show this again.</DialogDescription>
+          <DialogDescription>
+            Press Ctrl / to show this again.
+          </DialogDescription>
         </DialogHeader>
         <ul className="divide-y divide-pi-line">
           {KEYS.map(([what, keys]) => (
-            <li key={what} className="flex items-center justify-between gap-4 py-2 text-[13px] text-pi-ink">
+            <li
+              key={what}
+              className="flex items-center justify-between gap-4 py-2 text-[13px] text-pi-ink"
+            >
               {what}
               <span className="flex flex-none gap-1">
                 {keys.map((k) => (

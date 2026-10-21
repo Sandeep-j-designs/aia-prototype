@@ -8,7 +8,6 @@ import type {
   NeoCard,
   NeoChat,
   NeoContext,
-  NeoFrame,
   NeoMessage,
   NeoOption,
   NeoPresenceState,
@@ -21,7 +20,6 @@ import { MOCK_NEO_CHATS } from "@/config/pages/neo/mock-chats";
 import { opensInCanvas } from "@/utils/pages/neo/canvas";
 import { isNeoHref, onNeoChatPage, onNeoPage } from "@/utils/pages/neo/route";
 import { subscribeNeoSelection } from "@/utils/pages/neo/selection";
-import { resolveFollowUp } from "@/utils/pages/neo/frame";
 import { findName } from "@/utils/pages/neo";
 import { reviewSetFor } from "@/utils/pages/neo/review-sets";
 import { logActivity } from "@/hooks/pages/inbox/use-activity";
@@ -58,9 +56,6 @@ type NeoDecision =
 const uid = (p: string) =>
   `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-/** A frame plus the question that set it, to ask again for another client. */
-type Frame = NeoFrame & { question: string };
-
 /** The company a request names, other than the one on screen. */
 const companyNamed = (text: string, current: string) => {
   const companies = getState().companies;
@@ -80,21 +75,6 @@ const companyNamed = (text: string, current: string) => {
       return first.length >= 5 && words.has(first);
     });
   return hit && hit.id !== current ? hit : undefined;
-};
-
-/** Vendors and ledgers in a company's books, for reading follow-ups. */
-const namesIn = (company: string) => {
-  const bills = getState().items.filter(
-    (x) => x.company === company && x.route === "AP" && !x.priorVoucher
-  );
-  return {
-    vendors: [...new Set(bills.map((x) => x.form.party).filter(Boolean))],
-    ledgers: [
-      ...new Set(
-        bills.flatMap((x) => x.form.lines.map((l) => l.ledger)).filter(Boolean)
-      ),
-    ],
-  };
 };
 
 class Stopped extends Error {
@@ -216,14 +196,6 @@ export const useNeoRuntime = () => {
     text: string;
     progress?: { done: number; total: number };
   } | null>(null);
-  // What the conversation is about, for follow-ups. Cleared by New chat,
-  // opening another chat, × on its chip, or another company.
-  const [frame, setFrame] = useState<Frame | null>(null);
-  const frameRef = useRef(frame);
-  frameRef.current = frame;
-  useEffect(() => {
-    if (frame && frame.company !== company) setFrame(null);
-  }, [company, frame]);
   // Once a sign-off has been given this visit, the footer note has made
   // its point and steps aside.
   const [signedOff, setSignedOff] = useState(false);
@@ -271,13 +243,6 @@ export const useNeoRuntime = () => {
   */
   const onNeo = onNeoPage(router.query);
   const [carried, setCarried] = useState<NeoContext | null>(null);
-  // Documents picked from the Inbox in the prompt box (+ › Pick from Inbox).
-  // They are "this" — on the page and in the panel — until ×, a new chat or
-  // another company.
-  const [picked, setPicked] = useState<{
-    company: string;
-    ids: string[];
-  } | null>(null);
   useEffect(() => {
     if (!onNeo) setCarried(null);
     // Neo never docks beside Neo: entering its pages folds the panel.
@@ -286,28 +251,24 @@ export const useNeoRuntime = () => {
 
   const context: NeoContext = useMemo(
     () =>
-      picked?.company === company && picked.ids.length
-        ? picked.ids.length === 1
-          ? { company, itemId: picked.ids[0], selectedIds: [] }
-          : { company, selectedIds: picked.ids }
-        : detached
-          ? { company, selectedIds: [] }
-          : onNeo
-            ? carried?.company === company
-              ? carried
-              : { company, selectedIds: [] }
-            : {
-                company,
-                itemId,
-                selectedIds: itemId ? [] : selectedIds,
-                module,
-              },
-    [picked, detached, onNeo, carried, itemId, selectedIds, module, company]
+      detached
+        ? { company, selectedIds: [] }
+        : onNeo
+          ? carried?.company === company
+            ? carried
+            : { company, selectedIds: [] }
+          : {
+              company,
+              itemId,
+              selectedIds: itemId ? [] : selectedIds,
+              module,
+            },
+    [detached, onNeo, carried, itemId, selectedIds, module, company]
   );
 
   /*
-    A bill this chat handed over for review — a voucher-entry batch, or
-    Document collection's results — is a subtask of the chat (20 Oct 2026):
+    A draft this chat handed over for review — a reconciliation run's sales
+    drafts — is a subtask of the chat (20 Oct 2026):
     on the bill, the dock opens on the bill's checklist and the questions
     asked about it, with the chat one click up. `dockView` is that click;
     every new bill opens on its own view again.
@@ -447,7 +408,7 @@ export const useNeoRuntime = () => {
       if (
         scope &&
         !opts.userId &&
-        /\b(batch|collection|this run|all (the |of the )?(bills|drafts|vouchers|documents)|every (bill|draft|voucher|document)|the rest)\b/i.test(
+        /\b(this run|all (the |of the )?(drafts|vouchers)|every (draft|voucher)|the rest)\b/i.test(
           text
         )
       ) {
@@ -458,7 +419,6 @@ export const useNeoRuntime = () => {
       // Said back before the answer: how Neo read a follow-up, or that it
       // switched client because the request named one.
       const notes: string[] = [];
-      let prior = frameRef.current;
 
       // "Who owes Sahyadri?" asked in Shakunthalam's Neo: Neo is one
       // company's, so it says whose chat this is and changes nothing. The
@@ -467,23 +427,6 @@ export const useNeoRuntime = () => {
         ? companyNamed(text, ctx.company || "")
         : undefined;
 
-      // "and August?", "move them to Freight Inward": read against what the
-      // conversation is about.
-      if (!opts.replay && runText === text) {
-        const r = resolveFollowUp(
-          text,
-          prior && prior.company === ctx.company ? prior : null,
-          namesIn(ctx.company || getState().company)
-        );
-        if (r) {
-          runText = r.prompt;
-          if (r.selectedIds) {
-            ctx.itemId = undefined;
-            ctx.selectedIds = r.selectedIds;
-          }
-          notes.push(`Taken as “${r.note}”`);
-        }
-      }
       logActivity({
         company: ctx.company || getState().company,
         actor: { kind: "ai", name: "Neo" },
@@ -502,10 +445,6 @@ export const useNeoRuntime = () => {
             scope,
             text,
             attachments: attachments.length ? attachments : undefined,
-            records:
-              picked && picked.company === ctx.company && picked.ids.length
-                ? picked.ids
-                : undefined,
           },
         ]);
 
@@ -699,7 +638,7 @@ export const useNeoRuntime = () => {
           }
           patch(id, (m) => ({ ...m, text: said, links, streaming: false }));
         },
-        step: async (label, cite) => {
+        step: async (label, cite, by) => {
           guard();
           const stepId = uid("s");
           if (!stepsMsg) {
@@ -717,6 +656,7 @@ export const useNeoRuntime = () => {
                     label,
                     status: "running",
                     cite,
+                    by,
                     startedAt: Date.now(),
                   },
                 ],
@@ -733,6 +673,7 @@ export const useNeoRuntime = () => {
                   label,
                   status: "running",
                   cite,
+                  by,
                   startedAt: Date.now(),
                 },
               ],
@@ -759,13 +700,6 @@ export const useNeoRuntime = () => {
           guard();
           push({ suggestions: prompts });
         },
-        remember: (f) =>
-          setFrame({
-            ...f,
-            task: task.id,
-            company: ctx.company || getState().company,
-            question: runText,
-          }),
         askText: async (question, o) => {
           guard();
           const parse = o.parse || ((t: string) => t.trim() || undefined);
@@ -833,10 +767,6 @@ export const useNeoRuntime = () => {
           if (replay[0]?.kind === "card" && replay[0].card.kind === card.kind) {
             const d = replay.shift() as Extract<NeoDecision, { kind: "card" }>;
             // The person's edits to the card come back with it.
-            if (card.kind === "message" && d.card.kind === "message")
-              card.body = d.card.body;
-            if (card.kind === "changeset" && d.card.kind === "changeset")
-              card.rows = d.card.rows;
             if (card.kind === "decisions" && d.card.kind === "decisions")
               card.items = d.card.items;
             const id = push({ card, actions, chosen: d.value });
@@ -857,10 +787,6 @@ export const useNeoRuntime = () => {
           guard();
           if (actions.find((a) => a.id === choice)?.risk) setSignedOff(true);
           const edited = editableCards.current.get(id);
-          if (card.kind === "message" && edited?.kind === "message")
-            card.body = edited.body;
-          if (card.kind === "changeset" && edited?.kind === "changeset")
-            card.rows = edited.rows;
           if (card.kind === "decisions" && edited?.kind === "decisions")
             card.items = edited.items;
           editableCards.current.delete(id);
@@ -1030,7 +956,7 @@ export const useNeoRuntime = () => {
         setBusy(null);
       }
     },
-    [busy, context, router, picked]
+    [busy, context, router]
   );
 
   /** Answer the open question or card. */
@@ -1151,12 +1077,10 @@ export const useNeoRuntime = () => {
 
   const reset = useCallback(() => {
     if (controller.current) return;
-    setFrame(null);
     setMessages([]);
     setChatId(uid("chat"));
     setChatCompany(getState().company);
     setCarried(null);
-    setPicked(null);
     setCanvas(null);
   }, []);
 
@@ -1294,13 +1218,6 @@ export const useNeoRuntime = () => {
     [startRun]
   );
 
-  /** Make these Inbox documents "this", for the next request. */
-  const pickRecords = useCallback(
-    (ids: string[]) =>
-      setPicked(ids.length ? { company: getState().company, ids } : null),
-    []
-  );
-
   /* ------------------------------------------------------ chat management */
 
   const renameChat = useCallback((id: string, title: string) => {
@@ -1334,7 +1251,6 @@ export const useNeoRuntime = () => {
       setChatId(id);
       setChatCompany(chat.company);
       setMessages(chat.messages);
-      setFrame(null);
       setCanvas(null);
     },
     [chats]
@@ -1386,10 +1302,8 @@ export const useNeoRuntime = () => {
         if (controller.current) return;
         e.preventDefault();
         setMessages([]);
-        setFrame(null);
         setChatId(uid("chat"));
         setCarried(null);
-        setPicked(null);
         setCanvas(null);
         window.setTimeout(
           () => document.getElementById("neo-composer")?.focus(),
@@ -1420,31 +1334,13 @@ export const useNeoRuntime = () => {
     context,
     runContext: runs.find((r) => r.id === busy)?.context,
     detach: () => {
-      setPicked(null);
       setCarried(null);
       setDetached(true);
     },
     expand,
     startRun,
-    completeWaiting: (runId: string) =>
-      setRuns((rs) =>
-        rs.map((r) =>
-          r.id === runId &&
-          r.context.company === getState().company &&
-          r.status === "waiting"
-            ? {
-                ...r,
-                status: "done",
-                summary:
-                  "Supplier reply received (simulated); replacement queued for collection",
-              }
-            : r
-        )
-      ),
     answer,
     editCard,
-    frame,
-    clearFrame: () => setFrame(null),
     signedOff,
     /** The open question answered in words, if any: the prompt box answers it. */
     textAsk: busy
@@ -1467,8 +1363,6 @@ export const useNeoRuntime = () => {
     retry,
     edit: branch,
     continueRun,
-    pickRecords,
-    picked: picked?.company === company ? picked.ids : [],
     switchVersion,
     rate,
     canvas,

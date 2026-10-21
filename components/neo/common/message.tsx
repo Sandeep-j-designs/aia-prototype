@@ -13,7 +13,6 @@ import {
   Lock,
   MessageCircle,
   Play,
-  Receipt,
   RotateCcw,
   ShieldCheck,
   Stamp,
@@ -29,23 +28,8 @@ import { cn } from "@/lib/utils";
 import { canvasTitle, docShape, opensInCanvas } from "@/utils/pages/neo/canvas";
 import { unanswered } from "@/utils/pages/neo/decisions";
 import AskOptions from "./ask-options";
-import ChangesetCard from "./changeset-card";
-import BatchCard from "./batch-card";
-import { useBatches } from "@/hooks/pages/neo/use-batches";
-import DiffCard from "./diff-card";
-import AgentCard from "./agent-card";
-import CollectionCard from "./collection-card";
-import DryRunCard, { preparedCount } from "./dry-run-card";
-import {
-  dryRunCollection,
-  useInboxSources,
-} from "@/hooks/pages/inbox/use-inbox-sources";
-import ListCard from "./list-card";
-import MessageCard from "./message-card";
-import PipelineCard from "./pipeline-card";
 import Prose from "./prose";
 import Steps from "./steps";
-import VoucherCard from "./voucher-card";
 
 type CardProps = {
   message: NeoMessage;
@@ -78,7 +62,7 @@ type Props = CardProps & {
 };
 
 /**
- * The card itself — a voucher, a list, a change set. Drawn in the thread for
+ * The card itself — a reconciliation step. Drawn in the thread for
  * small cards and in the canvas beside the chat for documents; both places
  * share this, so an edit in one is the edit in the other.
  */
@@ -97,52 +81,8 @@ export const CardBody = ({
   const card = m.card;
   if (!card) return null;
   switch (card.kind) {
-    case "pipeline":
-      return (
-        <PipelineCard
-          card={card}
-          live={running}
-          paused={paused}
-          onPause={onPause}
-          onResume={onResume}
-          onStop={onStop}
-          onRef={onRef}
-        />
-      );
-    case "voucher":
-      return <VoucherCard card={card} onRef={onRef} />;
-    case "list":
-      return <ListCard card={card} onRef={onRef} all={expanded} />;
-    case "agent":
-      return <AgentCard card={card} />;
-    case "collection-setup":
-      return <CollectionCard card={card} />;
-    case "collection-dry-run":
-      return <DryRunCard card={card} />;
-    case "diff":
-      return <DiffCard card={card} onRef={onRef} />;
-    case "batch":
-      return <BatchCard card={card} editable={live} onRef={onRef} />;
     case "recon":
       return <ReconCard card={card} onRef={onRef} />;
-    case "changeset":
-      return (
-        <ChangesetCard
-          card={card}
-          editable={live}
-          onChange={onEditCard}
-          onRef={onRef}
-        />
-      );
-    case "message":
-      return (
-        <MessageCard
-          inputId={`neo-out-${m.id}`}
-          card={card}
-          editable={live}
-          onChange={(body) => onEditCard({ ...card, body })}
-        />
-      );
     default:
       return null;
   }
@@ -158,7 +98,7 @@ export const docIcon = (card: NeoCard) => {
     case "statement":
       return Stamp;
     default:
-      return card.kind === "voucher" ? Receipt : FileText;
+      return FileText;
   }
 };
 
@@ -263,31 +203,7 @@ const CanvasTile = ({
  * header, so both name the same action.
  */
 export const useSignoff = (m: NeoMessage) => {
-  // A batch card's sign-off counts the ticked rows live.
-  const { batches } = useBatches();
-  // …and a collection dry run's sign-off counts the drafts it would make.
-  const sources = useInboxSources();
-  const picked =
-    m.card?.kind === "changeset"
-      ? m.card.rows.filter((r) => r.checked).length
-      : 0;
-  const batchCard = m.card?.kind === "batch" ? m.card : undefined;
-  const batchPicked =
-    batchCard?.view === "register"
-      ? (batches
-          .find((b) => b.id === batchCard.batchId)
-          ?.rows.filter((r) => r.checked && r.status !== "left-out").length ??
-        0)
-      : 0;
-  const dryRun = m.card?.kind === "collection-dry-run" ? m.card : undefined;
-  const dryDraft = dryRun
-    ? sources.drafts.find((d) => d.company === dryRun.company)?.setup
-    : undefined;
-  const wouldPrepare =
-    dryRun && dryDraft
-      ? preparedCount(dryRunCollection(dryRun.company, dryDraft))
-      : 0;
-  // …and a reconciliation register's counts its vouchers.
+  // A reconciliation register's sign-off counts its vouchers.
   const { runs } = useRecon();
   const reconCard =
     m.card?.kind === "recon" && m.card.view === "register" ? m.card : undefined;
@@ -299,19 +215,9 @@ export const useSignoff = (m: NeoMessage) => {
       ? `Answer ${left} more to continue`
       : reconRun && a.primary
         ? `Create ${reconTotal} drafts`
-        : dryRun && a.id === "on"
-          ? wouldPrepare
-            ? `Turn on and prepare ${wouldPrepare} draft${wouldPrepare === 1 ? "" : "s"}`
-            : "Turn on"
-          : m.card?.kind === "changeset" && a.primary
-            ? `${m.card.verb} ${picked} bill${picked === 1 ? "" : "s"}`
-            : batchCard?.view === "register" && a.primary
-              ? `Create ${batchPicked} draft${batchPicked === 1 ? "" : "s"}`
-              : a.label;
+        : a.label;
   const blocked = (a: NonNullable<NeoMessage["actions"]>[number]) =>
-    (!!left && !!a.primary) ||
-    (m.card?.kind === "changeset" && !!a.primary && !picked) ||
-    (batchCard?.view === "register" && !!a.primary && !batchPicked);
+    !!left && !!a.primary;
   return { labelOf, blocked };
 };
 

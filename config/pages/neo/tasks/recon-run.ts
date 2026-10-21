@@ -194,7 +194,9 @@ const reconRun: NeoTask = {
     const reading = await api.step(
       attached.length
         ? `Reading ${files.length} files`
-        : `Reading the sample: Nandhini's ${p.short} reports`
+        : `Reading the sample: Nandhini's ${p.short} reports`,
+      undefined,
+      { skills: ["S1", "S2"] }
     );
     await api.wait(800);
     const run = startRun(company, files, periodId);
@@ -208,7 +210,11 @@ const reconRun: NeoTask = {
         : `Read ${run.docs.filter((d) => d.status === "read").length} reports${set.length ? ` · ${set.length} set aside` : ""}`
     );
     api.status(`Reconciling ${p.short}`, { done: 1, total: 5 });
-    const books = await api.step(`Checking ${p.short} in your books`);
+    const books = await api.step(
+      `Checking ${p.short} in your books`,
+      undefined,
+      { tools: ["books.vouchers", "books.open_bills"] }
+    );
     await api.wait(600);
     books(
       `Checked your books · ${statementBetween(p.from, p.to).length} bank rows${periodId === "sep" ? " · 8 Sep card already booked" : ` · ${dayLabel(PERIODS.sep.to)} receivables from September`}`
@@ -272,7 +278,10 @@ const reconRun: NeoTask = {
     }
     api.status(`Reconciling ${p.short}`, { done: 2, total: 5 });
 
-    const legB = await api.step("Proving every payout to the bank");
+    const legB = await api.step("Proving every payout to the bank", undefined, {
+      skills: ["S5"],
+      tools: ["recon.waterfall"],
+    });
     await api.wait(700);
     const r1 = getRun(run.id)!;
     const tied = r1.payouts.filter((x) => x.bank !== undefined);
@@ -283,14 +292,19 @@ const reconRun: NeoTask = {
       `${tied.length} payouts tied to bank credits · ${r1.payouts.filter((x) => x.status === "open").length} not due yet`
     );
 
-    const legA = await api.step("Tying sales days to payouts");
+    const legA = await api.step("Tying sales days to payouts", undefined, {
+      skills: ["S5"],
+      tools: ["recon.allocate"],
+    });
     await api.wait(500);
     const openSales = r1.sales.filter((s) => s.state === "open");
     legA(
       `${r1.sales.length - openSales.length} of ${r1.sales.length} day-channels paid · ${openSales.length} not due yet`
     );
 
-    const cls = await api.step("Classifying the rest of the bank");
+    const cls = await api.step("Classifying the rest of the bank", undefined, {
+      skills: ["S6"],
+    });
     await api.wait(500);
     const cov = coverage(r1);
     cls(`${cov.accounted} of ${cov.total} bank rows accounted`);
@@ -319,7 +333,10 @@ const reconRun: NeoTask = {
     }
 
     await api.checkpoint();
-    const creating = await api.step("Creating the drafts");
+    const creating = await api.step("Creating the drafts", undefined, {
+      skills: ["S7"],
+      tools: ["entry.draft"],
+    });
     await api.wait(600);
     const made = createReconDrafts(run.id);
     creating(
@@ -346,9 +363,10 @@ const reconRun: NeoTask = {
       ]
     );
     // The documents, as one row (the thread groups them).
-    (["reports", "payouts", "sales", "bank", "register", "drafts"] as const).forEach(
-      (view) =>
-        api.show({ kind: "recon", company, runId: run.id, view }, { open: false })
+    (
+      ["reports", "payouts", "sales", "bank", "register", "drafts"] as const
+    ).forEach((view) =>
+      api.show({ kind: "recon", company, runId: run.id, view }, { open: false })
     );
     api.suggest(
       periodId === "sep"

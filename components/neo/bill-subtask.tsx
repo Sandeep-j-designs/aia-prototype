@@ -8,26 +8,19 @@ import {
 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { configure, useStore } from "@/components/inbox/v2/store";
-import { useBatches } from "@/hooks/pages/neo/use-batches";
-import { useInboxSources } from "@/hooks/pages/inbox/use-inbox-sources";
 import { useRecon } from "@/hooks/pages/neo/use-recon";
 import {
   toggleBillCheck,
   useBillChecks,
 } from "@/hooks/pages/neo/use-bill-checks";
 import { useNeo } from "@/hooks/pages/neo/use-neo";
-import {
-  billReview,
-  collectedReview,
-  reconReview,
-  waiting,
-} from "@/utils/pages/neo/bill-checks";
+import { reconReview, waiting } from "@/utils/pages/neo/bill-checks";
 import { cn } from "@/lib/utils";
 
 /**
- * A bill as a subtask of the chat that handed it over for review (20 Oct
- * 2026): a voucher-entry batch's draft, or a bill Document collection
- * prepared (utils/pages/neo/review-sets.ts).
+ * A draft as a subtask of the chat that handed it over for review (20 Oct
+ * 2026): a sales voucher a reconciliation run drafted
+ * (utils/pages/neo/review-sets.ts).
  *
  * On such a bill, the dock is about that bill: a breadcrumb up to
  * the chat, the bill's checklist (what Neo did and what it wants you to look
@@ -43,13 +36,8 @@ export const useSubtask = () => {
   const neo = useNeo();
   const router = useRouter();
   const state = useStore();
-  const { batches } = useBatches();
-  const sources = useInboxSources();
   const recon = useRecon();
   const set = neo.subtask?.set;
-  const batch = set?.batchId
-    ? batches.find((b) => b.id === set.batchId)
-    : undefined;
   const item =
     neo.subtask && state.items.find((x) => x.id === neo.subtask!.itemId);
   const queue = useMemo(
@@ -59,7 +47,7 @@ export const useSubtask = () => {
         .filter((x): x is NonNullable<typeof x> => !!x),
     [set, state.items]
   );
-  if (!set || !item || (set.kind === "batch" && !batch)) return null;
+  if (!set || !item) return null;
   const index = queue.findIndex((x) => x.id === item.id);
   const chat = neo.chats.find((c) => c.id === neo.chatId);
   // The next bill still waiting, after this one, then from the top.
@@ -72,20 +60,8 @@ export const useSubtask = () => {
     configure({ queue: set.ids, queueFrom: `inbox:${set.name}` });
     void router.push(`/inbox?id=${encodeURIComponent(id)}`);
   };
-  const run =
-    set.kind === "recon"
-      ? recon.runs.find((r) => r.id === set.runId)
-      : undefined;
-  const review = batch
-    ? billReview(batch, item)
-    : run
-      ? reconReview(run, item)
-      : collectedReview(
-          item,
-          [...sources.receipts]
-            .reverse()
-            .find((r) => r.itemId === item.id && r.company === item.company)
-        );
+  const run = recon.runs.find((r) => r.id === set.runId);
+  const review = run ? reconReview(run, item) : null;
   return {
     set,
     item,
@@ -258,14 +234,7 @@ export const BillChecks = () => {
           className="flex w-full items-center gap-1.5 border-t border-pi-line px-3 py-2 text-left text-body-4 text-pi-body hover:text-pi-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border"
         >
           <Check className="h-3.5 w-3.5 text-pi-success" />
-          <span className="flex-1">
-            {review.fine.length}{" "}
-            {s.set.kind === "batch"
-              ? "matched the bill or your instruction"
-              : s.set.kind === "recon"
-                ? "rules passed"
-                : "read off the bill as it came in"}
-          </span>
+          <span className="flex-1">{review.fine.length} rules passed</span>
           <ChevronDown
             className={cn(
               "h-3.5 w-3.5 transition-transform",

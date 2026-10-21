@@ -59,7 +59,9 @@ const reconClose: NeoTask = {
     const reading = await api.step(
       api.attachments.some((a) => a.name === CLOSE_STATEMENT.name)
         ? `Reading ${CLOSE_STATEMENT.name}`
-        : `Reading the sample statement, ${CLOSE_STATEMENT.name}`
+        : `Reading the sample statement, ${CLOSE_STATEMENT.name}`,
+      undefined,
+      { skills: ["S1", "S5"], tools: ["coverage.check"] }
     );
     await api.wait(700);
     const res = readCloseStatement(run.id, CLOSE_STATEMENT.name)!;

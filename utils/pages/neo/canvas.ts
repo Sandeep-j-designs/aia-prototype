@@ -3,60 +3,16 @@ import { getRun, registerCounts, rulesOf } from "@/hooks/pages/neo/use-recon";
 
 /**
  * Which of Neo's cards are documents, opened beside the chat rather than
- * drawn inside it (19 Oct 2026, the chat apps' artifact pattern). A voucher,
- * a batch, a change set or a dry run is something to read and edit at full
- * size; the chat keeps a tile for it and the sign-off underneath.
- *
- * Small cards stay in the thread: a short list, an outbound message (read
- * verbatim right beside its Send), an agent, a live pipeline.
+ * drawn inside it (19 Oct 2026, the chat apps' artifact pattern). Every
+ * reconciliation step is something to read at full size; the chat keeps a
+ * tile for it and the sign-off underneath. A decisions sheet stays in the
+ * prompt box.
  */
-export const opensInCanvas = (card?: NeoCard) => {
-  if (!card) return false;
-  switch (card.kind) {
-    case "voucher":
-    case "batch":
-    case "changeset":
-    case "diff":
-    case "collection-setup":
-    case "collection-dry-run":
-    case "recon":
-      return true;
-    case "list":
-      return card.groups.reduce((n, g) => n + g.rows.length, 0) > 5;
-    default:
-      return false;
-  }
-};
+export const opensInCanvas = (card?: NeoCard) => card?.kind === "recon";
 
 /** The tile's name and one-line summary for a document card. */
 export const canvasTitle = (card: NeoCard): { title: string; meta: string } => {
   switch (card.kind) {
-    case "voucher":
-      return {
-        title: `${card.voucherType} · ${card.party}`,
-        meta: `${card.state} · ${card.voucherNo}`,
-      };
-    case "batch":
-      return {
-        title:
-          card.view === "settings"
-            ? "Batch settings"
-            : card.view === "register"
-              ? "Batch register"
-              : "Batch drafts",
-        meta: card.batchId,
-      };
-    case "changeset":
-      return {
-        title: card.title,
-        meta: `${card.rows.filter((r) => r.checked).length} of ${card.rows.length} ticked · ${card.field}`,
-      };
-    case "diff":
-      return { title: card.title, meta: `${card.rows.length} changes` };
-    case "collection-setup":
-      return { title: "Document collection setup", meta: "Agent settings" };
-    case "collection-dry-run":
-      return { title: "Dry run", meta: "What collecting would do" };
     case "recon": {
       const run = card.runId ? getRun(card.runId) : undefined;
       const c = run && registerCounts(run);
@@ -110,11 +66,6 @@ export const canvasTitle = (card: NeoCard): { title: string; meta: string } => {
       const [title, meta] = views[card.view];
       return { title, meta };
     }
-    case "list":
-      return {
-        title: card.title,
-        meta: `${card.groups.reduce((n, g) => n + g.rows.length, 0)} records`,
-      };
     default:
       return { title: "Document", meta: "" };
   }
@@ -128,13 +79,12 @@ export const canvasTitle = (card: NeoCard): { title: string; meta: string } => {
 export const canvasKey = (card: NeoCard): string | null =>
   card.kind === "recon"
     ? `recon:${card.view}:${card.view === "policy" || card.view === "rules" ? card.company : card.runId}`
-    : // A voucher or change set is edited in its own message: each stays its own.
-      null;
+    : null;
 
 /**
  * The three shapes a document takes: a ledger of rows and money, a
  * rulebook of terms, or a statement someone signs. Anything else is a
- * record (a voucher, a change set) drawn by its own card.
+ * record drawn by its own card.
  */
 export type DocShape = "ledger" | "rulebook" | "statement" | "record";
 
