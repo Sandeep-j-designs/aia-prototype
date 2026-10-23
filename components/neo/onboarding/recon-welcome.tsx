@@ -24,6 +24,9 @@ import { track } from "@/utils/pages/neo/recon-events";
 import { NeoStar } from "@/components/icons";
 import { cn } from "@/lib/utils";
 
+/** The dialog's close animation (duration-200), plus a frame to settle. */
+const MODAL_EXIT_MS = 240;
+
 /** prefers-reduced-motion, read after mount so the server render matches. */
 const useReducedMotion = () => {
   const [reduced, setReduced] = useState(false);
@@ -79,12 +82,17 @@ const ReconWelcome = () => {
     else void el.play().catch(() => setPaused(true));
   }, [open, paused, reduced, run]);
 
+  // The modal leaves first; the chat and the guide come in once it's gone,
+  // so nothing swaps underneath it as it fades (23 Oct 2026).
   const start = () => {
     if (company !== NANDHINI_ID)
       configure({ company: NANDHINI_ID, queue: [], queueFrom: undefined });
-    startGuidedRun();
+    closeReconWelcome();
     track("recon_onboarding_sample_started");
-    setPending(GUIDE_PROMPT);
+    window.setTimeout(() => {
+      startGuidedRun();
+      setPending(GUIDE_PROMPT);
+    }, MODAL_EXIT_MS);
   };
 
   return (

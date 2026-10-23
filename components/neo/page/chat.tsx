@@ -25,7 +25,8 @@ import Composer from "@/components/neo/common/composer";
 import ContextChip from "@/components/neo/common/context-chip";
 import DropZone from "@/components/neo/common/drop-zone";
 import Thread, { useLiveMessage } from "@/components/neo/common/thread";
-import { NeoMenuButton } from "./index";
+import { NeoMenuButton, useNeoColumnHidden } from "./index";
+import ChatTitle from "./chat-title";
 
 const NOTE =
   "Neo prepares; you approve. Nothing reaches your books without your click.";
@@ -69,6 +70,7 @@ const NeoChat = () => {
   const live = useLiveMessage(neo);
   const input = useRef<HTMLTextAreaElement>(null);
   const empty = !neo.messages.length;
+  const columnHidden = useNeoColumnHidden();
   const first = actor.split(" ")[0];
   const [hello, setHello] = useState("Hello");
   useEffect(() => {
@@ -155,10 +157,16 @@ const NeoChat = () => {
         disabled={!!neo.busy}
         className="flex min-h-0 min-w-0 flex-1 flex-col"
       >
-        {/* The title lives in the top bar's trail; below 1024px this row
-            only carries the button that opens Neo's column. */}
-        <header className="relative flex h-12 flex-none items-center gap-1 px-2 lg:hidden">
+        {/* The chat's own bar: its title menu once there's a conversation.
+            On the empty home only the column button shows, below 1024px. */}
+        <header
+          className={cn(
+            "relative flex h-12 flex-none items-center gap-1 px-2 lg:px-4",
+            empty ? !columnHidden && "lg:hidden" : "border-b border-pi-line"
+          )}
+        >
           <NeoMenuButton />
+          {!empty && <ChatTitle compact />}
         </header>
 
         {empty ? (

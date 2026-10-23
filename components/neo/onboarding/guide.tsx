@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * The guided first reconciliation, as an annotated walkthrough (23 Oct
- * 2026). "Try reconciliation" on Meet Neo starts a real run in the chat;
+ * 2026). "Try it now" on Meet Neo starts a real run in the chat;
  * the guide sits on top of it, never in it. At each step one annotation
  * rings the part of the screen that matters and says what is happening
  * there. Where the step is only Neo working, Neo holds until Continue;
@@ -41,8 +41,7 @@ import { cn } from "@/lib/utils";
  */
 
 /** Opens the prompt box's file dialog: choosing files starts the run. */
-export const chooseFiles = () =>
-  document.getElementById("neo-attach")?.click();
+export const chooseFiles = () => document.getElementById("neo-attach")?.click();
 
 const WIDTH = 340;
 const TOTAL = GUIDE_STEPS.length;
@@ -223,7 +222,19 @@ const GuideCoach = ({ onPrompt }: { onPrompt: (p: string) => void }) => {
     return () => window.removeEventListener("keydown", onKey);
   }, [advance]);
 
+  // A card with an anchor waits until the anchor is measured, so it lands
+  // in place instead of flashing in the middle and jumping. If the anchor
+  // never turns up, it centres after a moment.
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    setLate(false);
+    if (!shown || !coach?.anchor) return;
+    const t = window.setTimeout(() => setLate(true), 800);
+    return () => window.clearTimeout(t);
+  }, [shown, coach?.anchor, coach?.title]);
+
   if (!mounted || !shown || !coach) return null;
+  if (coach.anchor && !box && !late) return null;
 
   const width = Math.min(
     coach.kind === "choice" ? 380 : WIDTH,
@@ -276,7 +287,7 @@ const GuideCoach = ({ onPrompt }: { onPrompt: (p: string) => void }) => {
         role="dialog"
         aria-label={`Guide: ${coach.title}`}
         key={coach.title}
-        className="fixed z-[70] rounded-xl border border-pi-line bg-background shadow-[0_1px_2px_rgb(18_18_18/0.06),0_16px_40px_-12px_rgb(40_48_87/0.28)] duration-200 animate-in fade-in-0 zoom-in-95 motion-reduce:animate-none"
+        className="fixed z-[70] rounded-xl border border-pi-line bg-background shadow-[0_1px_2px_rgb(18_18_18/0.06),0_16px_40px_-12px_rgb(40_48_87/0.28)] duration-300 ease-out animate-in fade-in-0 slide-in-from-bottom-2 motion-reduce:animate-none"
         style={{ top: pos.top, left: pos.left, width }}
       >
         {box && (
@@ -294,7 +305,10 @@ const GuideCoach = ({ onPrompt }: { onPrompt: (p: string) => void }) => {
           <span className="min-w-0 flex-1 truncate text-[12px] font-semibold leading-4 text-pi-ink-2">
             {GUIDE_COPY.rail}
           </span>
-          <ol aria-label={`Step ${coach.step} of ${TOTAL}`} className="flex gap-1">
+          <ol
+            aria-label={`Step ${coach.step} of ${TOTAL}`}
+            className="flex gap-1"
+          >
             {GUIDE_STEPS.map((s) => (
               <li
                 key={s.n}

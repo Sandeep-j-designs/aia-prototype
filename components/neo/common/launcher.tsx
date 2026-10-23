@@ -43,10 +43,8 @@ const NeoLauncher = ({ className }: Props) => {
         (onPage || neo.open) && "bg-surface-muted"
       )}
     >
-      <NeoMark
-        className="h-5 w-5 rounded-md"
-        live={!!neo.busy && !neo.paused}
-      />
+      {/* No spinner here (23 Oct 2026): the chat already shows Neo at work. */}
+      <NeoMark className="h-5 w-5 rounded-md" />
       <span className="hidden sm:inline">Neo</span>
       {neo.busy && <span className="sr-only">Neo is working</span>}
     </button>

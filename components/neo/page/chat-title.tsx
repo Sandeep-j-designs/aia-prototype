@@ -23,7 +23,9 @@ export const chatMarkdown = (chat: NeoChat) =>
     `# ${chat.title}`,
     ...chat.messages
       .filter((m) => m.text)
-      .map((m) => (m.role === "user" ? `**You:** ${m.text}` : `**Neo:** ${m.text}`)),
+      .map((m) =>
+        m.role === "user" ? `**You:** ${m.text}` : `**Neo:** ${m.text}`
+      ),
   ].join("\n\n");
 
 export const exportChat = (chat: NeoChat) => {
@@ -129,14 +131,18 @@ const ChatTitle = ({ compact, onBar }: Props) => {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-48">
             <DropdownMenuItem onSelect={() => neo.toggleStar(chat.id)}>
-              <Star className={cn("mr-2 h-4 w-4", chat.starred && "fill-current")} />
+              <Star
+                className={cn("mr-2 h-4 w-4", chat.starred && "fill-current")}
+              />
               {chat.starred ? "Unstar" : "Star"}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => setRenaming(true)}>
               <Pencil className="mr-2 h-4 w-4" />
               Rename
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => exportChat({ ...chat, messages: neo.messages })}>
+            <DropdownMenuItem
+              onSelect={() => exportChat({ ...chat, messages: neo.messages })}
+            >
               <Download className="mr-2 h-4 w-4" />
               Export as Markdown
             </DropdownMenuItem>

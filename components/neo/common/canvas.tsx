@@ -37,9 +37,60 @@ type Props = {
  * ‹ › steps through the other documents in this chat. Esc or × closes it;
  * the tile in the thread opens it again.
  */
+const CANVAS_WIDTH_KEY = "aia.neo.canvasWidth";
+/** The chat keeps at least this much beside the canvas, and so does it. */
+const SIDE_MIN = 360;
+
 const Canvas = ({ variant }: Props) => {
   const neo = useNeo();
   const [expanded, setExpanded] = useState(false);
+  // Width set by dragging the divider; null keeps the default split.
+  const [width, setWidth] = useState<number | null>(null);
+  useEffect(() => {
+    try {
+      const saved = Number(window.localStorage.getItem(CANVAS_WIDTH_KEY));
+      if (saved >= SIDE_MIN) setWidth(saved);
+    } catch {
+      /* private window: the default split will do */
+    }
+  }, []);
+  const saveWidth = (w: number | null) => {
+    setWidth(w);
+    try {
+      if (w === null) window.localStorage.removeItem(CANVAS_WIDTH_KEY);
+      else window.localStorage.setItem(CANVAS_WIDTH_KEY, String(w));
+    } catch {
+      /* not kept; fine for this session */
+    }
+  };
+
+  // Dragging the divider between chat and canvas sets the canvas's width;
+  // double-click goes back to the default split.
+  const startResize = (e: React.PointerEvent) => {
+    const box = surface.current?.parentElement?.getBoundingClientRect();
+    if (!box) return;
+    e.preventDefault();
+    const fit = (x: number) =>
+      Math.round(
+        Math.min(box.width - SIDE_MIN, Math.max(SIDE_MIN, box.right - x))
+      );
+    let last = fit(e.clientX);
+    const move = (ev: PointerEvent) => {
+      last = fit(ev.clientX);
+      setWidth(last);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.style.removeProperty("cursor");
+      document.body.style.removeProperty("user-select");
+      saveWidth(last);
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
   const surface = useRef<HTMLElement>(null);
   const placeholder = useRef<HTMLDivElement>(null);
   const origin = useRef<DOMRect | null>(null);
@@ -156,8 +207,19 @@ const Canvas = ({ variant }: Props) => {
         // chat that leaves a 360px strip of the thread and its prompt
         // box in view (20 Oct 2026, small laptops); below 1024px, the
         // whole screen.
-        "min-w-0 flex-[1.15] border-l border-pi-line duration-200 animate-in fade-in-0 slide-in-from-right-4 motion-reduce:animate-none max-[1439px]:absolute max-[1439px]:inset-y-0 max-[1439px]:left-[360px] max-[1439px]:right-0 max-[1439px]:z-30 max-[1439px]:shadow-popover-shadow max-lg:fixed max-lg:inset-0 max-lg:left-0 max-lg:z-50 max-lg:border-l-0"
+        cn(
+          "relative min-w-0 border-l border-pi-line duration-200 animate-in fade-in-0 slide-in-from-right-4 motion-reduce:animate-none max-[1439px]:absolute max-[1439px]:inset-y-0 max-[1439px]:right-0 max-[1439px]:z-30 max-[1439px]:shadow-popover-shadow max-lg:fixed max-lg:inset-0 max-lg:!left-0 max-lg:z-50 max-lg:!w-full max-lg:border-l-0",
+          // A dragged width holds at every size above phone; otherwise
+          // the default split (side by side) or the 360px strip (sheet).
+          width === null
+            ? "flex-[1.15] max-[1439px]:left-[360px]"
+            : "w-[var(--canvas-w)] max-w-[calc(100%-360px)] flex-none"
+        )
   );
+  const pageStyle =
+    !panel && width !== null
+      ? ({ "--canvas-w": `${width}px` } as React.CSSProperties)
+      : undefined;
 
   return (
     <>
@@ -166,7 +228,7 @@ const Canvas = ({ variant }: Props) => {
           ref={placeholder}
           aria-hidden="true"
           className={paneClass}
-          style={{ ...paneStyle, visibility: "hidden" }}
+          style={{ ...paneStyle, ...pageStyle, visibility: "hidden" }}
         />
       )}
       <section
@@ -183,7 +245,11 @@ const Canvas = ({ variant }: Props) => {
                 height: "100dvh",
                 zIndex: 60,
               }
-            : { ...paneStyle, ...(origin.current ? { animation: "none" } : {}) }
+            : {
+                ...paneStyle,
+                ...pageStyle,
+                ...(origin.current ? { animation: "none" } : {}),
+              }
         }
         className={
           expanded
@@ -191,6 +257,20 @@ const Canvas = ({ variant }: Props) => {
             : paneClass
         }
       >
+        {!panel && !expanded && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize chat and document"
+            title="Drag to resize · double-click to reset"
+            onPointerDown={startResize}
+            onDoubleClick={() => saveWidth(null)}
+            className="group absolute inset-y-0 -left-1.5 z-10 hidden w-3 cursor-col-resize lg:block"
+          >
+            <span className="absolute inset-y-0 left-1.5 w-px bg-transparent transition-colors group-hover:bg-pi-brand-border group-active:bg-pi-brand" />
+            <span className="absolute left-0.5 top-1/2 h-8 w-2 -translate-y-1/2 rounded-full border border-pi-line-2 bg-background shadow-pi-1 transition-colors group-hover:border-pi-brand-border" />
+          </div>
+        )}
         <header className="flex h-14 flex-none items-center gap-3 border-b border-pi-line bg-background pl-4 pr-2">
           <span className="grid h-8 w-8 flex-none place-items-center rounded-md border border-pi-line bg-pi-fill text-pi-body">
             <Icon className="h-4 w-4" />

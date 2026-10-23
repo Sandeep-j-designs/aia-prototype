@@ -216,8 +216,6 @@ import PreparedTag from "@/components/neo/common/prepared-tag";
 import NeoPage, { NEO_PAGES, type NeoPageId } from "@/components/neo/page";
 import NeoChat from "@/components/neo/page/chat";
 import NeoAgents from "@/components/neo/page/agents";
-import { agentById } from "@/config/pages/neo/mock-agents";
-import ChatTitle from "@/components/neo/page/chat-title";
 import { setNeoSelection } from "@/utils/pages/neo/selection";
 import type { Crumb } from "@/components/top-bar-layout";
 const money = (n: number) =>
@@ -2047,21 +2045,9 @@ export default function Workspace() {
     if (!quiet)
       notify(`Switched to ${companyOf(value)?.name ?? "organisation"}`);
   };
-  /* Neo's pages name themselves in the top bar's trail; the chat's crumb is
-     its title menu. */
-  const pageCrumbs: Crumb[] | undefined = neoPage
-    ? [
-        "Neo",
-        neoPage === "chat"
-          ? { label: "Chat", node: <ChatTitle compact onBar /> }
-          : "Agents",
-        ...(neoPage === "agents" &&
-        router.query.view === "page" &&
-        agentById(router.query.agent as string)
-          ? [agentById(router.query.agent as string)!.name]
-          : []),
-      ]
-    : undefined;
+  /* Neo's pages keep the platform bar bare: no trail. Neo's own column and
+     the chat's bar say where you are. */
+  const pageCrumbs: Crumb[] | undefined = neoPage ? [] : undefined;
   /** A new organisation becomes the active one, as production's create does. */
   const createOrganisation = (name: string) => {
     const created = createCompany(name);

@@ -22,23 +22,37 @@ const PAGE_TITLE: Record<NeoPageId, string> = {
   agents: "Agents",
 };
 
-/** Opens Neo's column as a sheet, where there's no room to keep it open. */
-const MenuContext = createContext<() => void>(() => undefined);
+/**
+ * Brings Neo's column back: as a sheet where there's no room to keep it
+ * open, or into place when it was hidden. `hidden` says the column is put
+ * away on a wide screen, so the button has to show there too.
+ */
+const MenuContext = createContext<{ open: () => void; hidden: boolean }>({
+  open: () => undefined,
+  hidden: false,
+});
+
+/** Whether the column is hidden on a wide screen. */
+export const useNeoColumnHidden = () => useContext(MenuContext).hidden;
+
+const HIDDEN_KEY = "aia.neo.columnHidden";
 
 /**
- * The button that brings Neo's column in below 1024px. Each page puts it at
- * the start of its own header; from 1024px the column is always there and
- * the button isn't drawn.
+ * The button that brings Neo's column in: below 1024px as a sheet, and from
+ * 1024px when the column has been hidden. Each page puts it at the start of
+ * its own header.
  */
 export const NeoMenuButton = ({ className }: { className?: string }) => {
-  const open = useContext(MenuContext);
+  const { open, hidden } = useContext(MenuContext);
   return (
     <button
       type="button"
       onClick={open}
-      aria-label="Chats and Neo pages"
+      aria-label="Show chats"
+      title="Show chats"
       className={cn(
-        "grid h-9 w-9 flex-none place-items-center rounded-md text-pi-body hover:bg-pi-fill hover:text-pi-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border lg:hidden",
+        "grid h-9 w-9 flex-none place-items-center rounded-md text-pi-body hover:bg-pi-fill hover:text-pi-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border",
+        !hidden && "lg:hidden",
         className
       )}
     >
@@ -61,6 +75,26 @@ type Props = { page: NeoPageId; children: ReactNode };
 const NeoPage = ({ page, children }: Props) => {
   const router = useRouter();
   const [menu, setMenu] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    try {
+      setHidden(window.localStorage.getItem(HIDDEN_KEY) === "1");
+    } catch {
+      /* private window: start with the column shown */
+    }
+  }, []);
+  const hide = (on: boolean) => {
+    setHidden(on);
+    try {
+      window.localStorage.setItem(HIDDEN_KEY, on ? "1" : "0");
+    } catch {
+      /* not kept; fine for this session */
+    }
+  };
+  const bringBack = () =>
+    window.matchMedia("(min-width: 1024px)").matches
+      ? hide(false)
+      : setMenu(true);
   useEffect(() => setMenu(false), [router.asPath]);
   useEffect(() => {
     if (!menu) return;
@@ -73,11 +107,13 @@ const NeoPage = ({ page, children }: Props) => {
     void router.push(neoHref(p));
   };
   return (
-    <MenuContext.Provider value={() => setMenu(true)}>
+    <MenuContext.Provider value={{ open: bringBack, hidden }}>
       <div className="neo-scope flex h-full min-h-0 min-w-0 flex-1 bg-background">
-        <div className="hidden lg:flex">
-          <NeoNav page={page} onPage={go} />
-        </div>
+        {!hidden && (
+          <div className="hidden lg:flex">
+            <NeoNav page={page} onPage={go} onHide={() => hide(true)} />
+          </div>
+        )}
         {menu && (
           <div className="fixed inset-0 z-50 lg:hidden">
             <button
