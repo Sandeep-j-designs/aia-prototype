@@ -234,4 +234,10 @@ export const MOCK_OWN_REGISTRATION: Record<
     state: "Maharashtra",
     address: "Gat No. 312, Chakan MIDC Phase II, Khed, Pune 410501",
   },
+  nandhini: {
+    legalName: "Nandhini Deluxe",
+    gstin: "29AADCN5532H1ZD",
+    state: "Karnataka",
+    address: "JP Nagar, Bengaluru, Karnataka 560078",
+  },
 };

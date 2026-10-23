@@ -127,13 +127,13 @@ html[data-neo-open] [data-sonner-toaster][data-y-position="bottom"] {
 .neo-prose {
   font-family: var(--font-family-reading);
   font-optical-sizing: auto;
-  font-size: 16.5px;
-  line-height: 1.65;
+  font-size: 15px;
+  line-height: 1.6;
   color: var(--pi-ink);
   font-variant-numeric: lining-nums tabular-nums;
 }
 .neo-panel .neo-prose {
-  font-size: 15.5px;
+  font-size: 14px;
   line-height: 1.6;
 }
 .neo-prose > :first-child {
@@ -167,13 +167,14 @@ html[data-neo-open] [data-sonner-toaster][data-y-position="bottom"] {
 }
 .neo-prose h1,
 .neo-prose h2 {
-  font-size: 18px;
-  line-height: 28px;
+  font-size: 16px;
+  line-height: 24px;
+  letter-spacing: -0.01em;
 }
 .neo-prose h3,
 .neo-prose h4 {
-  font-size: 15px;
-  line-height: 24px;
+  font-size: 13.5px;
+  line-height: 20px;
 }
 .neo-prose ul,
 .neo-prose ol {
@@ -222,20 +223,21 @@ html[data-neo-open] [data-sonner-toaster][data-y-position="bottom"] {
   width: 100%;
   border-collapse: collapse;
   font-family: var(--font-family-primary);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 12.5px;
+  line-height: 18px;
 }
 .neo-prose .neo-table th {
   background: var(--pi-head-bg);
   color: var(--pi-body);
-  font-weight: 500;
-  font-size: 12px;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.02em;
   text-align: left;
   white-space: nowrap;
 }
 .neo-prose .neo-table th,
 .neo-prose .neo-table td {
-  padding: 8px 12px;
+  padding: 7px 10px;
   border-bottom: 1px solid var(--pi-line);
 }
 /* Cells break between words, never inside one; a wide table scrolls. */
@@ -243,8 +245,10 @@ html[data-neo-open] [data-sonner-toaster][data-y-position="bottom"] {
   overflow-wrap: normal;
   word-break: normal;
 }
+/* The first column (the row's name) and a figure never wrap; a closing
+   text column, like a status, may. */
 .neo-prose .neo-table td:first-child,
-.neo-prose .neo-table td:last-child {
+.neo-prose .neo-table td:last-child[data-num] {
   white-space: nowrap;
 }
 .neo-prose .neo-table tbody tr:last-child td {
@@ -340,4 +344,469 @@ html[data-neo-open] [data-sonner-toaster][data-y-position="bottom"] {
 #neo-composer:hover,
 .neo-scope textarea:hover {
   background-color: transparent;
+}
+
+/* The welcome's caption: each scene's line rises in as the preview moves
+   on (21 Oct 2026). */
+@keyframes neo-caption-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.neo-caption-in {
+  animation: neo-caption-in 360ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .neo-caption-in {
+    animation: none;
+  }
+}
+
+/* Neo's reasoning (21 Oct 2026, after kobra.systems): nine dots turning
+   while it works, the step's name crossing in, each thought and source
+   chip arriving out of a soft blur, and older lines fading out at the top
+   of the window. */
+@keyframes neo-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.22;
+  }
+  20% {
+    opacity: 1;
+  }
+}
+.neo-dots > span {
+  animation: neo-dot 1.35s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 150ms);
+}
+@keyframes neo-label-in {
+  from {
+    opacity: 0;
+    filter: blur(3px);
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+    transform: none;
+  }
+}
+.neo-label-in {
+  animation: neo-label-in 420ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+@keyframes neo-thought-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+    transform: none;
+  }
+}
+.neo-thought-in {
+  animation: neo-thought-in 520ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+@keyframes neo-chip-in {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+    transform: none;
+  }
+}
+.neo-chip-in {
+  animation: neo-chip-in 560ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+.neo-fade-top {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 44px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 44px);
+}
+
+/* A streaming answer (22 Oct 2026): each new word rises out of a soft
+   blur as it lands, and a caret in the brand's blue glows after the last
+   word until the answer is done. */
+.neo-prose.is-streaming .neo-w {
+  display: inline-block;
+  animation: neo-word-in 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes neo-word-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(0.22em);
+  }
+}
+.neo-caret {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.05em;
+  margin-left: 0.15em;
+  vertical-align: -0.16em;
+  border-radius: 3px;
+  background: linear-gradient(to right, transparent, var(--pi-brand));
+  opacity: 0.5;
+  animation: neo-caret 1.2s ease-in-out infinite;
+}
+@keyframes neo-caret {
+  50% { opacity: 0.18; }
+}
+
+/* Neo's reasoning as a step timeline (22 Oct 2026): the rail draws down
+   from each step to the next, the running step's ring breathes, and a tool
+   step's tick draws itself when it lands. */
+.neo-rail > .neo-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 19px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--pi-line-2);
+  transform-origin: top;
+  animation: neo-rail-in 420ms 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes neo-rail-in {
+  from { transform: scaleY(0); }
+}
+.neo-node-run {
+  position: relative;
+}
+.neo-node-run::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--pi-brand) 22%, transparent);
+  animation: neo-node-pulse 1.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+@keyframes neo-node-pulse {
+  from { transform: scale(0.5); opacity: 1; }
+  to { transform: scale(1.35); opacity: 0; }
+}
+.neo-node-in {
+  animation: neo-node-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes neo-node-in {
+  from { transform: scale(0.6); opacity: 0; }
+}
+.neo-tick path,
+.neo-tick polyline {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: neo-tick 380ms 120ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes neo-tick {
+  to { stroke-dashoffset: 0; }
+}
+
+/* The person's answer to Neo rises in from the prompt box, on their side. */
+.neo-reply-in {
+  transform-origin: bottom right;
+  animation: neo-reply-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes neo-reply-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .neo-prose.is-streaming .neo-w,
+  .neo-caret,
+  .neo-rail > .neo-step::before,
+  .neo-node-run::after,
+  .neo-node-in,
+  .neo-reply-in {
+    animation: none;
+  }
+  .neo-tick path,
+  .neo-tick polyline {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .neo-dots > span,
+  .neo-label-in,
+  .neo-thought-in,
+  .neo-chip-in {
+    animation: none;
+  }
+}
+
+/* Neo's questions rise from behind the prompt box (21 Oct 2026): the sheet
+   unrolls upward from the box's top edge, then its question and answers
+   settle in, one after another. */
+@keyframes neo-sheet-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+    clip-path: inset(100% 0 0 0 round 18px 18px 0 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    clip-path: inset(0 0 0 0 round 18px 18px 0 0);
+  }
+}
+.neo-sheet-rise {
+  animation: neo-sheet-rise 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes neo-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.neo-sheet-panel {
+  animation: neo-sheet-in 320ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+.neo-sheet-row {
+  animation: neo-sheet-in 360ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .neo-sheet-rise,
+  .neo-sheet-panel,
+  .neo-sheet-row {
+    animation: none;
+  }
+}
+.neo-answer-option {
+  transition: background-color 180ms ease, box-shadow 180ms ease;
+}
+.neo-answer-option[aria-selected="true"] {
+  box-shadow: inset 0 0 0 1px var(--pi-brand-border);
+}
+.neo-answer-option:active {
+  background-color: var(--pi-brand-tint);
+}
+/* Motion follows a state change: a question arriving, a choice accepted,
+   a stage in progress, or a document ready to open. */
+@keyframes neo-question-arrive {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes neo-choice-confirm {
+  from { opacity: 0; transform: scale(0.65); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes neo-stage-working {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+.neo-question-enter,
+.neo-work-card {
+  animation: neo-question-arrive 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.neo-choice-check {
+  animation: neo-choice-confirm 180ms ease-out both;
+}
+.neo-stage-active {
+  animation: neo-stage-working 1800ms ease-in-out infinite;
+}
+.neo-result-tile {
+  animation: neo-question-arrive 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.neo-result-tile[aria-pressed="true"] > span:first-child {
+  background: var(--pi-brand-tint);
+  color: var(--pi-brand);
+  transition: background-color 180ms ease, color 180ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .neo-question-enter,
+  .neo-work-card,
+  .neo-choice-check,
+  .neo-stage-active,
+  .neo-result-tile {
+    animation: none;
+  }
+  .neo-answer-option,
+  .neo-result-tile[aria-pressed="true"] > span:first-child {
+    transition: none;
+  }
+}
+.neo-home-prompt .relative.z-10 {
+  border-radius: 16px;
+  box-shadow: 0 2px 6px -4px var(--pi-line-2);
+}
+/* Neo › Chat home (22 Oct 2026): one quiet card of jobs; the home rises
+   in once. Rows tint on hover. */
+.neo-home-chip {
+  transition: border-color 180ms ease, box-shadow 180ms ease, color 180ms ease;
+}
+.neo-home-chip:hover {
+  border-color: var(--pi-brand-border);
+  color: var(--pi-ink);
+  box-shadow: 0 4px 12px -6px color-mix(in srgb, var(--pi-brand) 30%, transparent);
+}
+.neo-home-rise {
+  animation: neo-home-rise 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes neo-home-rise {
+  from { opacity: 0; transform: translateY(6px); }
+}
+/* The home's backdrop: one soft brand tint falling from the top of the
+   page to white, the way the chat apps light an empty home. */
+.neo-home-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 0%, color-mix(in srgb, var(--pi-brand) 16%, transparent), transparent 75%),
+    radial-gradient(ellipse 40% 45% at 0% 0%, color-mix(in srgb, var(--pi-brand-vivid) 10%, transparent), transparent 80%),
+    radial-gradient(ellipse 40% 45% at 100% 0%, color-mix(in srgb, var(--pi-brand-vivid) 10%, transparent), transparent 80%),
+    linear-gradient(to bottom, color-mix(in srgb, var(--pi-brand) 6%, hsl(var(--background))), hsl(var(--background)) 70%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .neo-home-chip { transition: none; }
+  .neo-home-rise { animation: none; }
+}
+.neo-home-emblem {
+  background: linear-gradient(145deg, hsl(var(--background)), var(--pi-brand-tint));
+  border: 1px solid color-mix(in srgb, var(--pi-brand) 16%, transparent);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--pi-brand) 5%, transparent), 0 6px 18px -8px color-mix(in srgb, var(--pi-brand) 40%, transparent), inset 0 1px 0 hsl(var(--background));
+}
+
+/* Neo › Agents (22 Oct 2026): the featured agent's sources sit on a soft
+   brand stage and their lines draw into the output; the page's pieces
+   rise in once. */
+.neo-agent-stage {
+  background:
+    radial-gradient(ellipse 80% 70% at 70% 50%, color-mix(in srgb, var(--pi-brand) 7%, transparent), transparent 75%),
+    var(--pi-page);
+}
+.neo-agent-flow path {
+  stroke: var(--pi-brand-border);
+  stroke-width: 1.25;
+  stroke-dasharray: 1;
+  animation: neo-sources-draw 700ms 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes neo-sources-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+.neo-agent-rise {
+  animation: neo-home-rise 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.neo-agent-featured {
+  box-shadow: 0 1px 2px rgba(32, 52, 132, 0.04), 0 12px 32px -18px rgba(32, 52, 132, 0.18);
+}
+@media (prefers-reduced-motion: reduce) {
+  .neo-agent-flow path,
+  .neo-agent-rise { animation: none; }
+}
+
+/* ------------------------------------------------------------------------
+   Reasoning, alive (23 Oct 2026). While Neo works its mark breathes inside
+   a soft ring that ripples out; the label ticks over like a counter as the
+   work moves on, and the newest thought slides in under it. When the work
+   lands the star gives way to a tick that pops in. Opened, the steps fall
+   in one after another. All transform and opacity; reduced motion stills it.
+   ------------------------------------------------------------------------ */
+@keyframes neo-orbit {
+  to { transform: rotate(360deg); }
+}
+@keyframes neo-halo {
+  0% { transform: scale(0.55); opacity: 0.45; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+/* Neo's mark is a letter, so it breathes rather than spins. */
+@keyframes neo-orb-breathe {
+  0%, 100% { transform: scale(0.88); opacity: 0.75; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+.neo-orb-star {
+  animation: neo-orb-breathe 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.neo-orb-halo {
+  animation: neo-halo 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+@keyframes neo-pop {
+  0% { transform: scale(0.4); opacity: 0; }
+  60% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.neo-pop {
+  animation: neo-pop 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* The label as a ticker: the old words leave upward, the new arrive from
+   below. */
+@keyframes neo-tick-out {
+  to { transform: translateY(-80%); opacity: 0; filter: blur(2px); }
+}
+@keyframes neo-tick-in {
+  from { transform: translateY(80%); opacity: 0; filter: blur(2px); }
+  to { transform: none; opacity: 1; filter: none; }
+}
+.neo-tick-out {
+  animation: neo-tick-out 200ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+.neo-tick-in {
+  animation: neo-tick-in 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* A step running: a hairline ring turning. */
+@keyframes neo-spin {
+  to { transform: rotate(360deg); }
+}
+.neo-spin {
+  animation: neo-spin 0.8s linear infinite;
+}
+/* Opened, the steps fall in one by one. */
+@keyframes neo-step-in {
+  from { transform: translateX(-4px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.neo-step-in {
+  animation: neo-step-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .neo-orb-star,
+  .neo-orb-halo,
+  .neo-pop,
+  .neo-tick-out,
+  .neo-tick-in,
+  .neo-spin,
+  .neo-step-in {
+    animation: none;
+  }
+  .neo-orb-halo,
+  .neo-tick-out {
+    display: none;
+  }
+}
+
+/* The guide's spotlight breathes once a beat, so the eye finds it. */
+@keyframes neo-spot-pulse {
+  0% { box-shadow: 0 0 0 0 rgb(49 70 176 / 0.35); }
+  100% { box-shadow: 0 0 0 10px rgb(49 70 176 / 0); }
+}
+.neo-spot-pulse {
+  animation: neo-spot-pulse 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .neo-spot-pulse { animation: none; }
+}
+/* Opacity only: the spotlight's position is its transform. */
+@keyframes neo-fade-in {
+  from { opacity: 0; }
+}
+.neo-fade-in {
+  animation: neo-fade-in 280ms ease-out both;
 }

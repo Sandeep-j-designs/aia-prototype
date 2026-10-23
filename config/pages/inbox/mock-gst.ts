@@ -788,7 +788,144 @@ const augustFor = (
  * DEV: GET /api/gst-reconciliation/gstin?companyId=… and friends, each
  * scoped by the session's company.
  */
+const NANDHINI_PROFILE: GstCompanyProfile = {
+  name: "Nandhini Deluxe",
+  gstin: "29AADCN5532H1ZD",
+  pan: "AADCN5532H",
+  stateCode: "29",
+};
+// Sample restaurant purchases: the demo treats input credit as ineligible.
+const NANDHINI_SUPPLIERS: Supplier[] = [
+  {
+    name: "Nandhini Foods LLP (creditor)",
+    gstin: "29AABFN1234F1Z5",
+    rate: 5,
+    min: 18000,
+    max: 48000,
+    weight: 3,
+    blocked: true,
+    invoiceNo: (n) => `NF/26-27/${n}`,
+  },
+  {
+    name: "Bharat Gas Commercial",
+    gstin: "29AABCB2345C1Z6",
+    rate: 18,
+    min: 8000,
+    max: 18000,
+    weight: 2,
+    blocked: true,
+    invoiceNo: (n) => `BG/${n}`,
+  },
+  {
+    name: "EcoPack Bengaluru",
+    gstin: "29AABCE3456C1Z7",
+    rate: 18,
+    min: 4000,
+    max: 12000,
+    weight: 2,
+    blocked: true,
+    invoiceNo: (n) => `EP/${n}`,
+  },
+  {
+    name: "KitchenCare Services",
+    gstin: "29AABFK4567F1Z8",
+    rate: 18,
+    min: 2500,
+    max: 9500,
+    weight: 1,
+    blocked: true,
+    invoiceNo: (n) => `KC/${n}`,
+  },
+];
+const NANDHINI_MIX: MatchMix = {
+  ...AUG_2026_MIX,
+  [GSTR2B_MATCH_TYPE.FULLY_MATCHED]: 16,
+  [GSTR2B_MATCH_TYPE.AI_MATCHED]: 4,
+  [GSTR2B_MATCH_TYPE.AI_PROBABLE_MATCH]: 2,
+  [GSTR2B_MATCH_TYPE.MISSING_IN_2B]: 3,
+  [GSTR2B_MATCH_TYPE.MISSING_IN_PR]: 3,
+  [GSTR2B_MATCH_TYPE.MANUALLY_MATCHED]: 2,
+};
+
 export const seedFor = (companyId: string): GstSeed => {
+  if (companyId === "nandhini") {
+    const invoices = generateInvoicePairs(
+      2026,
+      8,
+      NANDHINI_MIX,
+      2909,
+      NANDHINI_SUPPLIERS,
+      NANDHINI_PROFILE
+    );
+    const files = augustFor(
+      "cmp-nandhini",
+      NANDHINI_PROFILE,
+      "accounts@nandhini.example.test",
+      invoices
+    );
+    const augustInvoices = generateInvoicePairs(
+      2026,
+      7,
+      NANDHINI_MIX,
+      2908,
+      NANDHINI_SUPPLIERS,
+      NANDHINI_PROFILE
+    );
+    const augustFiles = augustFor(
+      "cmp-nandhini",
+      NANDHINI_PROFILE,
+      "accounts@nandhini.example.test",
+      augustInvoices
+    );
+    return {
+      profile: NANDHINI_PROFILE,
+      gstins: [
+        {
+          ...MOCK_GST_GSTINS[0],
+          gstrGstDetailsUuid: "gstd-nandhini",
+          companyUuid: "cmp-nandhini",
+          ucUuid: "uc-nandhini",
+          pan: NANDHINI_PROFILE.pan,
+          gstin: NANDHINI_PROFILE.gstin,
+        },
+      ],
+      savedAuth: {
+        gstin: NANDHINI_PROFILE.gstin,
+        username: "nandhini_demo",
+        email: "accounts@nandhini.example.test",
+        isSaved: true,
+      },
+      twoB: [
+        ...augustFiles.twoB,
+        ...files.twoB.map((f) => ({
+          ...f,
+          requestUuid: "nd-2b-202609",
+          fileStatusUuid: "nd-2b-202609",
+          periodFrom: "2026-09-01",
+          periodTo: "2026-09-30",
+          creationDate: "2026-10-14T10:00:00+05:30",
+          lastUpdateDate: "2026-10-14T10:05:00+05:30",
+        })),
+      ],
+      pr: [
+        ...augustFiles.pr.map((f) => ({
+          ...f,
+          fileName: "Nandhini_Purchases_Aug2026.xlsx",
+        })),
+        ...files.pr.map((f) => ({
+          ...f,
+          fileStatusUuid: "nd-pr-202609",
+          fileUuid: "nd-pr-202609",
+          fileName: "Nandhini_Purchases_Sep2026.xlsx",
+          periodFrom: "2026-09-01",
+          periodTo: "2026-09-30",
+          creationDate: "2026-10-14T10:00:00+05:30",
+          lastUpdateDate: "2026-10-14T10:05:00+05:30",
+        })),
+      ],
+      invoices: { "2026-08": augustInvoices, "2026-09": invoices },
+    };
+  }
   if (companyId === "shakun")
     return {
       profile: GST_COMPANY,
@@ -848,13 +985,22 @@ export const seedFor = (companyId: string): GstSeed => {
 
 /** The rows a run of one month produces for one company — the same each time. */
 export const runPairsFor = (companyId: string, year: number, month: number) =>
-  companyId === "acme"
+  companyId === "nandhini"
     ? generateInvoicePairs(
         year,
         month,
-        RUN_MIX,
-        runSeedFor(year, month) + 27,
-        ACME_SUPPLIERS,
-        ACME_COMPANY
+        NANDHINI_MIX,
+        runSeedFor(year, month),
+        NANDHINI_SUPPLIERS,
+        NANDHINI_PROFILE
       )
-    : generateInvoicePairs(year, month, RUN_MIX, runSeedFor(year, month));
+    : companyId === "acme"
+      ? generateInvoicePairs(
+          year,
+          month,
+          RUN_MIX,
+          runSeedFor(year, month) + 27,
+          ACME_SUPPLIERS,
+          ACME_COMPANY
+        )
+      : generateInvoicePairs(year, month, RUN_MIX, runSeedFor(year, month));

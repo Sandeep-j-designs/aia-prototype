@@ -1489,7 +1489,7 @@ export const COMPLEX_POSTED_BILL: InboxItem = {
     voucherNo: "PUR/26-27/0337",
     supplierInvoiceNo: "KBL/SRV/2627/01184",
     billDate: "22 Sep 2026",
-    dueDate: "22 Oct 2026",
+    dueDate: "21 Oct 2026",
     gstReg: GST_REG,
     costCentre: null,
     flagged: [],

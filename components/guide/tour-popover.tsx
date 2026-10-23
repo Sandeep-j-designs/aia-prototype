@@ -28,8 +28,19 @@ const EDGE = 16;
  * markup is injected into this document rather than framed, so its panes carry
  * `data-guide-id` like anything else and are found the same way.
  */
-export const findAnchor = (anchor: string) =>
-  document.querySelector<HTMLElement>(`[data-guide-id="${anchor}"]`);
+export const findAnchor = (anchor: string) => {
+  // The newest one on screen: a sheet leaving and the one arriving can
+  // share an anchor for a moment, and hidden copies have no box.
+  const all = [
+    ...document.querySelectorAll<HTMLElement>(`[data-guide-id="${anchor}"]`),
+  ].filter((el) => {
+    const r = el.getBoundingClientRect();
+    return (
+      r.width > 0 && r.height > 0 && !el.closest("[hidden],[aria-hidden=true]")
+    );
+  });
+  return all[all.length - 1] ?? null;
+};
 
 const same = (a: Box | null, b: Box | null) =>
   a === b ||
@@ -53,7 +64,7 @@ const same = (a: Box | null, b: Box | null) =>
  * Returns null — not a zero box — when the anchor is absent, which is how the
  * caller knows to centre the card instead of pointing it at the origin.
  */
-const useAnchorBox = (anchor?: string) => {
+export const useAnchorBox = (anchor?: string) => {
   const [box, setBox] = useState<Box | null>(null);
 
   useEffect(() => {
@@ -96,7 +107,12 @@ const useAnchorBox = (anchor?: string) => {
 };
 
 /** Places the card beside the anchor, flipping and clamping to stay on screen. */
-const place = (box: Box, height: number, placement: TourStep["placement"]) => {
+export const place = (
+  box: Box,
+  height: number,
+  placement: TourStep["placement"],
+  width = CARD_WIDTH
+) => {
   const vw = window.innerWidth,
     vh = window.innerHeight;
   const clamp = (value: number, max: number) =>
@@ -104,26 +120,24 @@ const place = (box: Box, height: number, placement: TourStep["placement"]) => {
 
   const fitsBelow = box.top + box.height + GAP + height <= vh - EDGE;
   const fitsAbove = box.top - GAP - height >= EDGE;
-  const fitsRight = box.left + box.width + GAP + CARD_WIDTH <= vw - EDGE;
+  const fitsRight = box.left + box.width + GAP + width <= vw - EDGE;
 
   let side = placement ?? "bottom";
   if (side === "bottom" && !fitsBelow) side = fitsAbove ? "top" : "bottom";
   if (side === "top" && !fitsAbove) side = "bottom";
   if (side === "right" && !fitsRight) side = "left";
-  if (side === "left" && box.left - GAP - CARD_WIDTH < EDGE) side = "right";
+  if (side === "left" && box.left - GAP - width < EDGE) side = "right";
 
   if (side === "left" || side === "right") {
     const left =
-      side === "right"
-        ? box.left + box.width + GAP
-        : box.left - GAP - CARD_WIDTH;
+      side === "right" ? box.left + box.width + GAP : box.left - GAP - width;
     /* A pane taller than the window has no meaningful top to sit level with —
        aligning to it puts the card over the page's own header. Those get the
        middle of the screen instead, which is where the eye is anyway. */
     const tall = box.height > vh * 0.8;
     return {
       top: clamp(tall ? vh / 2 - height / 2 : box.top, vh - height),
-      left: clamp(left, vw - CARD_WIDTH),
+      left: clamp(left, vw - width),
     };
   }
 
@@ -131,13 +145,12 @@ const place = (box: Box, height: number, placement: TourStep["placement"]) => {
      screen — left-aligned normally, right-aligned for a control that already
      sits near the right edge, which is where the toolbar buttons live. */
   const leftAligned = box.left;
-  const rightAligned = box.left + box.width - CARD_WIDTH;
-  const left =
-    leftAligned + CARD_WIDTH > vw - EDGE ? rightAligned : leftAligned;
+  const rightAligned = box.left + box.width - width;
+  const left = leftAligned + width > vw - EDGE ? rightAligned : leftAligned;
   return {
     top:
       side === "bottom" ? box.top + box.height + GAP : box.top - GAP - height,
-    left: clamp(left, vw - CARD_WIDTH),
+    left: clamp(left, vw - width),
   };
 };
 

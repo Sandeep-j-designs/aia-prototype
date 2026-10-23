@@ -1,379 +1,525 @@
 import { companyOf, getState } from "@/components/inbox/v2/store";
+import { NANDHINI_ID } from "@/config/pages/neo/mock-recon";
 import {
-  NANDHINI_ID,
-  RECON_OCT_FILES,
-  RECON_SAMPLE_FILES,
-  dayLabel,
-  reconFileNamed,
-  statementBetween,
-} from "@/config/pages/neo/mock-recon";
+  RECON_PERIODS,
+  RECON_SAMPLE,
+} from "@/config/pages/neo/mock-recon-sources";
 import {
-  PERIODS,
-  answerRun,
-  coverage,
-  createReconDrafts,
+  KINDS,
+  KIND_LABEL,
+  acknowledgePartial,
+  answerQuestion,
+  TEMPLATE,
+  cancelRun,
+  configOf,
+  confirmConfig,
+  currentVersion,
+  executeRun,
   getRun,
+  liveSources,
   inr,
-  latestRun,
-  policyOf,
-  registerCounts,
-  rulesOf,
-  showRunRegister,
+  readiness,
+  replaceSource,
+  rowOf,
+  sampleCorrection,
   startRun,
-  undoRecon,
-  reconSummary,
-  type ReconSummaryRow,
 } from "@/hooks/pages/neo/use-recon";
-import type { ReconRun } from "@/types/pages/neo/recon";
+import type {
+  ReconPeriodId,
+  ReconRun,
+  RowRef,
+  RunVersion,
+} from "@/types/pages/neo/recon";
 import { decide } from "./shared";
+import { reconOnboarding } from "@/hooks/pages/neo/use-recon-onboarding";
+import { GUIDE_COPY } from "@/config/pages/neo/onboarding";
 import type { NeoTask } from "@/types/pages/neo";
 import { has } from "@/utils/pages/neo";
 
 /**
- * Three-way reconciliation, Flow 1 (20 Oct 2026): POS day-ends, card/UPI
- * and platform settlements and the bank statement, for one outlet and one
- * period. The brief's order: identify every file, check the books, ask only
- * what blocks something (each answer pauses only what it touches), prove
- * every payout to the bank (Leg B), tie sales days to payouts (Leg A),
- * classify the rest of the bank, then one register to sign off.
- *
- * September is the first run. "1–15 October" is the second, where what
- * September taught (formats, payers, shadow rules) shows as questions not
- * asked (Phase 4).
- *
- * Drafts only: sales to the Sales book's Needs Review, bank-led vouchers
- * onto their Banking lines. Approving and syncing stay on those screens.
+ * US-02 → US-05 · Reconcile a period (aligned to the AiA 2.0 PRD, 21 Oct
+ * 2026): the files are identified and validated, rejected rows are named,
+ * a partial run is acknowledged or a corrected source replaces the bad
+ * one, the engine matches under R1–R8, and the questions attached to
+ * exceptions are answered once. Read-only (A2): nothing is posted.
  *
  * DEV: POST /api/recon/runs streams these steps; the engine is
  * hooks/pages/neo/use-recon.ts.
  */
-/** Whole rupees when there are no paise; a dash for nothing. */
-const amt = (n: number) => (n ? inr(n).replace(/\.00$/, "") : "—");
 
-/**
- * The three-way summary as the chat says it: the verdict, then one row per
- * channel (POS sales ↔ settlement report ↔ bank) with both differences and
- * a status, totals, and what's not due yet. Cash has no report; its
- * deposits are contras in the register.
- */
-const summaryText = (run: ReconRun) => {
-  const rows = reconSummary(run);
-  const withReport = rows.filter((r) => r.status !== "no-report");
-  const off = withReport.filter((r) => r.status === "difference");
-  // Short enough to sit on one line in the table; the verdict above says more.
-  const status = (r: ReconSummaryRow) =>
-    r.status === "reconciled"
-      ? "✓ Reconciled"
-      : r.status === "round-off"
-        ? "✓ Within ₹1"
-        : r.status === "no-report"
-          ? "No report"
-          : r.reportVsBank
-            ? `✗ ₹${amt(Math.abs(r.reportVsBank))} ${r.reportVsBank > 0 ? "short" : "over"}`
-            : `✗ POS ₹${amt(Math.abs(r.posVsReport))} off`;
-  const verdict = (r: ReconSummaryRow) =>
-    [
-      r.posVsReport &&
-        `POS and report differ by ₹${inr(Math.abs(r.posVsReport))}`,
-      r.reportVsBank &&
-        `₹${inr(Math.abs(r.reportVsBank))} ${r.reportVsBank > 0 ? "short in the bank" : "over in the bank"}`,
-    ]
-      .filter(Boolean)
-      .join(", ");
-  const sum = (f: (r: ReconSummaryRow) => number) =>
-    withReport.reduce((s, r) => s + f(r), 0);
-  const head = off.length
-    ? `**${run.period.replace(" 2026", "")} reconciles three ways on ${withReport.length - off.length} of ${withReport.length} channels.** ${off.map((r) => `${r.label}: ${verdict(r)}`).join("; ")}; it's in suspense below.`
-    : `**${run.period.replace(" 2026", "")} reconciles three ways on every channel with a report.** POS, settlement reports and bank agree${withReport.some((r) => r.status === "round-off") ? ", within ₹1 round-off" : ""}.`;
-  // Six columns fit the chat: the three records, the bank's side, and the
-  // verdict. Deductions (gross − net) are on the payouts document.
-  const table = [
-    "| Channel | POS sales | Report gross | Net payout | Bank credit | Status |",
-    "|---|---:|---:|---:|---:|---|",
-    ...rows.map(
-      (r) =>
-        `| ${r.label} | ${amt(r.pos)} | ${amt(r.reportGross)} | ${amt(r.net)} | ${amt(r.bank)} | ${status(r)} |`
-    ),
-    `| **With a report** | **${amt(sum((r) => r.pos))}** | **${amt(sum((r) => r.reportGross))}** | **${amt(sum((r) => r.net))}** | **${amt(sum((r) => r.bank))}** | **${off.length ? `${off.length} to look at` : "✓ Reconciled"}** |`,
-  ].join("\n");
-  const notDue = rows.reduce((t, r) => t + r.notDue, 0);
-  return [
-    head,
-    table,
-    notDue
-      ? `Not due yet: ₹${(notDue / 1e5).toFixed(1)}L of payouts land after ${dayLabel(run.to)}. Cash has no report.`
-      : "Cash has no report.",
-  ].join("\n\n");
+const MONTH =
+  /\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|nov(ember)?|dec(ember)?)\b/i;
+
+/** The period a request names, or why it can't be used (FR-01 AC2). */
+const periodIn = (
+  prompt: string
+): ReconPeriodId | { invalid: string } | undefined => {
+  if (/\boct(ober)?\b/i.test(prompt)) return "oct";
+  if (/\bsep(t|tember)?\b/i.test(prompt)) return "sep";
+  const other = prompt.match(MONTH)?.[0];
+  return other ? { invalid: other } : undefined;
 };
 
-const r2 = (n: number) => Math.round(n * 100) / 100;
+/** An exception kind as part of a row's status: "3 not in books". */
+const STATUS_WORDS: Record<string, [string, string]> = {
+  "two-source": ["not in books", "not in books"],
+  amount: ["amount differs", "amounts differ"],
+  "no-reference": ["no reference", "no reference"],
+  candidates: ["has several matches", "have several matches"],
+  "cross-period": ["due later", "due later"],
+};
+
+const cell = (n?: number) => (n === undefined || n === 0 ? "—" : `₹${inr(n)}`);
+const paise = (run: ReconRun, rows: RowRef[], kind: RowRef["kind"]) =>
+  rows
+    .filter((r) => r.kind === kind)
+    .reduce((n, r) => n + Math.round((rowOf(run, r)?.amount || 0) * 100), 0);
 
 /**
- * What needs a person after the run, as a short list: suspense with its
- * reason, payouts booked as charged that deserve a look, files set aside,
- * vouchers waiting on an answer. Nothing when nothing does.
+ * The reconciliation in one table (step 06): one row per channel with what
+ * each source holds, how much matched, what is left and why, then the bank
+ * lines no settlement explains, and the totals. The rows behind every
+ * figure are in the result document.
  */
-const needsYou = (run: ReconRun, flagged: number) => {
-  const lines = [
-    ...run.suspense
-      .filter((l) => l.state === "open")
-      .map(
-        (l) =>
-          `- **${l.what}**: ₹${amt(l.amount)} in suspense. ${l.reason.replace(/\.$/, "")}.`
-      ),
-    flagged
-      ? `- **${flagged} payout${flagged === 1 ? "" : "s"}** booked as charged but worth a check: an unusual fee or a missing UTR. See Payouts › Needs a look.`
-      : "",
-    run.docs.filter((d) => d.status !== "read").length
-      ? `- **${run.docs.filter((d) => d.status !== "read").length} files set aside**: ${run.docs
-          .filter((d) => d.status !== "read")
-          .map((d) =>
-            d.status === "duplicate"
-              ? "a statement already in Banking"
-              : d.status === "blocked"
-                ? `a ${d.outlet} report`
-                : "not a report"
+export const summaryTable = (run: ReconRun, v: RunVersion) => {
+  const channel = (label: string) => label.split(" · ")[0];
+  const names = [
+    ...new Set([...v.groups, ...v.exceptions].map((x) => channel(x.label))),
+  ];
+  const all = { s: 0, b: 0, k: 0, g: 0, e: 0 };
+  const lines = names.map((name) => {
+    const gs = v.groups.filter((g) => channel(g.label) === name);
+    const es = v.exceptions.filter((e) => channel(e.label) === name);
+    const rows = [...gs.flatMap((g) => g.rows), ...es.flatMap((e) => e.rows)];
+    const [s, b, k] = (["settlement", "bank", "books"] as const).map((kind) =>
+      paise(run, rows, kind)
+    );
+    all.s += s;
+    all.b += b;
+    all.k += k;
+    all.g += gs.length;
+    all.e += es.length;
+    const kinds = es.reduce<Record<string, number>>(
+      (m, e) => ({ ...m, [e.kind]: (m[e.kind] || 0) + 1 }),
+      {}
+    );
+    const status = es.length
+      ? Object.entries(kinds)
+          .map(
+            ([kind, n]) =>
+              `${n} ${STATUS_WORDS[kind]?.[n === 1 ? 0 : 1] || kind}`
           )
-          .join(", ")}. See Reports.`
-      : "",
-    run.vouchers.filter((v) => v.status === "needs-input").length
-      ? `- **${run.vouchers.filter((v) => v.status === "needs-input").length} sales vouchers** wait for your answer on the POS GST.`
-      : "",
-  ].filter(Boolean);
-  return lines.length ? ["**Needs you**", ...lines].join("\n") : "";
+          .join(", ")
+      : "Reconciled";
+    return `| ${name} | ${cell(s / 100)} | ${cell(b / 100)} | ${cell(k / 100)} | ${gs.length} | ${status} |`;
+  });
+  const other = v.unmatched.filter((u) => u.kind === "bank");
+  const otherP = paise(run, other, "bank");
+  return [
+    "| Channel | Settlement | Bank | Books | Matched | Status |",
+    "|---|---:|---:|---:|---:|---|",
+    ...lines,
+    `| Other bank lines | — | ${cell(otherP / 100)} | — | — | ${other.length} lines, no settlement |`,
+    `| **Total** | **${cell(all.s / 100)}** | **${cell((all.b + otherP) / 100)}** | **${cell(all.k / 100)}** | **${all.g}** | **${all.e} exceptions** |`,
+  ].join("\n");
 };
 
-/** Each question's tab on the sheet. */
-const RUN_HEADER: Record<string, string> = {
-  "pos-inclusive": "POS GST",
-  ctrlx: "CTRLX",
-  llp: "LLP transfer",
-  "swiggy-short": "Swiggy short",
-  amazon: "Amazon Pay",
+/** One row per source: the counts reconcile to accepted rows (US-04 AC3). */
+export const countsTable = (run: ReconRun) => {
+  const v = currentVersion(run)!;
+  return [
+    "| Source | Accepted | Matched | Exceptions | Unmatched | Rejected |",
+    "|---|---:|---:|---:|---:|---:|",
+    ...KINDS.map((k) => {
+      const c = v.counts[k];
+      return `| ${KIND_LABEL[k]} | ${c.accepted} | ${c.matched} | ${c.exceptions} | ${c.unmatched} | ${c.rejected} |`;
+    }),
+  ].join("\n");
 };
 
 const reconRun: NeoTask = {
   id: "recon-run",
-  title: "Reconcile sales, settlements and bank",
+  title: "Reconcile bank, settlements and books",
   match: (p, _ctx, attachments = []) =>
-    has(p, /\b(set ?up|configure)\b/i)
+    has(p, /\b(set ?up|configure|review|export|save)\b/i)
       ? 0
       : has(p, /\b(recon|reconcil\w*|3-way|three-way)\b/i) ||
-          attachments.some((a) => reconFileNamed(a.name))
+          // Any upload starts a reconciliation (21 Oct 2026).
+          attachments.length > 0
         ? 30
         : 0,
   run: async (api) => {
     const company = api.context.company || getState().company;
     if (company !== NANDHINI_ID) {
       await api.say(
-        `${companyOf(company)?.name} doesn't sell through POS or platforms, so there's nothing to reconcile three ways. Bank matching for its invoices is in Banking. In this prototype, three-way reconciliation runs for **Nandhini Deluxe**; switch to it in the top bar.`
+        `${companyOf(company)?.name} has no settlement data in this prototype. Three-way reconciliation runs for **Nandhini Deluxe**; switch to it in the top bar.`
       );
-      return "Not a POS client";
-    }
-    const attached = api.attachments.map((a) => a.name);
-    const periodId =
-      has(api.prompt, /\boct(ober)?\b/i) ||
-      attached.some((n) => RECON_OCT_FILES.some((f) => f.name === n))
-        ? "oct"
-        : "sep";
-    const p = PERIODS[periodId];
-    if (policyOf(company)?.status !== "approved") {
-      await api.chain("Set up reconciliation for Nandhini Deluxe");
-      if (policyOf(company)?.status !== "approved")
-        return "Waiting for the policy";
+      return "No settlement data for this client";
     }
 
-    // No reports attached: the sample is the only set that works here, so
-    // Neo reads it rather than asking (20 Oct 2026, one sheet per run).
-    const files = attached.length
-      ? attached
-      : (periodId === "oct" ? RECON_OCT_FILES : RECON_SAMPLE_FILES).map(
-          (f) => f.name
-        );
-    const known = rulesOf(company).filter((r) => r.state === "active");
-    const reading = await api.step(
-      attached.length
-        ? `Reading ${files.length} files`
-        : `Reading the sample: Nandhini's ${p.short} reports`,
-      undefined,
-      { skills: ["S1", "S2"] }
-    );
-    await api.wait(800);
-    const run = startRun(company, files, periodId);
-    const set = run.docs.filter((d) => d.status !== "read");
-    const remembered = run.docs.filter((d) =>
-      d.hits.some((h) => h.rule === "DOC-06")
-    );
-    reading(
-      remembered.length
-        ? `Read ${run.docs.filter((d) => d.status === "read").length} reports · ${remembered.length} formats recognised, no re-mapping`
-        : `Read ${run.docs.filter((d) => d.status === "read").length} reports${set.length ? ` · ${set.length} set aside` : ""}`
-    );
-    api.status(`Reconciling ${p.short}`, { done: 1, total: 5 });
-    const books = await api.step(
-      `Checking ${p.short} in your books`,
-      undefined,
-      { tools: ["books.vouchers", "books.open_bills"] }
-    );
-    await api.wait(600);
-    books(
-      `Checked your books · ${statementBetween(p.from, p.to).length} bank rows${periodId === "sep" ? " · 8 Sep card already booked" : ` · ${dayLabel(PERIODS.sep.to)} receivables from September`}`
-    );
-    await api.checkpoint();
-    const qs = getRun(run.id)!.questions;
-    const prior = periodId === "oct" ? latestRun(company, "sep") : undefined;
-    // Every question and the drafting, on one sheet: Neo's picks are filled
-    // in, what the books settle is folded, and one button answers them all
-    // and creates the drafts. With nothing to ask, the register's own
-    // sign-off is the one input.
-    const sheet = qs.length
-      ? await decide(
-          api,
-          prior
-            ? `Before I draft ${p.short} · ${qs.length} against ${prior.questions.length} in September`
-            : `Before I draft ${p.short}`,
-          qs.map((q) => ({
-            id: q.id,
-            header: RUN_HEADER[q.id],
-            question: q.text,
-            // Your own words book it to suspense, with them as its note.
-            ...(q.options.some((o) => o.id === "suspense")
-              ? {
-                  other: {
-                    fallback: "suspense",
-                    placeholder:
-                      "What it is; it waits in suspense until you confirm",
-                  },
-                }
-              : {}),
-            why: q.detail,
-            settled: q.settled,
-            recommended: q.answer,
-            options: q.options,
-          })),
-          [
-            {
-              id: "create",
-              label: "Submit and create drafts",
-              primary: true,
-              risk: "draft",
-            },
-            { id: "cancel", label: "Not now" },
-          ]
-        )
-      : undefined;
-    if (sheet) {
-      for (const q of qs) answerRun(run.id, q.id, sheet.picks[q.id]);
-      const said = Object.entries(sheet.notes);
-      if (sheet.choice === "create" && said.length)
-        await api.say(
-          `In suspense with your note${said.length === 1 ? "" : "s"}, until you confirm: ${said.map(([id, n]) => `${RUN_HEADER[id] || id}: “${n}”`).join("; ")}.`
-        );
-      if (sheet.choice !== "create") {
-        await api.say(
-          "Nothing drafted, and nothing learned: rules only come from runs you sign off. Your answers are kept on the run."
-        );
-        return "Not drafted";
+    // The guided first run (22 Oct 2026) opens on one choice: the sample
+    // or your own files. Asking for the sample by name skips it.
+    const guided = reconOnboarding().guided;
+    const NOTE = GUIDE_COPY.notes;
+    if (guided && !api.attachments.length && !/\bsample\b/i.test(api.prompt)) {
+      await api.coach(1, GUIDE_COPY.intro);
+      const pick = await api.card({ kind: "guide-choice" }, [
+        { id: "sample", label: GUIDE_COPY.choice.sample.label, primary: true },
+        { id: "own", label: GUIDE_COPY.choice.own.label },
+      ]);
+      if (pick === "own") {
+        await api.coach(1, GUIDE_COPY.uploadNote);
+        api.outcome("waiting");
+        return "Waiting for your files";
       }
     }
-    api.status(`Reconciling ${p.short}`, { done: 2, total: 5 });
 
-    const legB = await api.step("Proving every payout to the bank", undefined, {
-      skills: ["S5"],
-      tools: ["recon.waterfall"],
-    });
-    await api.wait(700);
-    const r1 = getRun(run.id)!;
-    const tied = r1.payouts.filter((x) => x.bank !== undefined);
-    const flagged = r1.payouts.filter((x) =>
-      x.hits.some((h) => h.severity === "soft")
-    );
-    legB(
-      `${tied.length} payouts tied to bank credits · ${r1.payouts.filter((x) => x.status === "open").length} not due yet`
+    // 01 · Choose a template.
+    api.stage(1);
+    let cfg = configOf(company);
+    await api.think(
+      cfg
+        ? `Using configuration v${cfg.version} of ${TEMPLATE.name}, confirmed by ${cfg.confirmedBy}.`
+        : `${TEMPLATE.name} is the only template in this release: a bank statement, settlement reports and the books, matched three ways.`
     );
 
-    const legA = await api.step("Tying sales days to payouts", undefined, {
-      skills: ["S5"],
-      tools: ["recon.allocate"],
-    });
-    await api.wait(500);
-    const openSales = r1.sales.filter((s) => s.state === "open");
-    legA(
-      `${r1.sales.length - openSales.length} of ${r1.sales.length} day-channels paid · ${openSales.length} not due yet`
-    );
-
-    const cls = await api.step("Classifying the rest of the bank", undefined, {
-      skills: ["S6"],
-    });
-    await api.wait(500);
-    const cov = coverage(r1);
-    cls(`${cov.accounted} of ${cov.total} bank rows accounted`);
-    api.status(`Reconciling ${p.short}`, { done: 3, total: 5 });
-
-    showRunRegister(run.id);
-    const sign = sheet
-      ? "create"
-      : await api.card(
-          { kind: "recon", company, runId: run.id, view: "register" },
-          [
-            {
-              id: "create",
-              label: "Create drafts",
-              primary: true,
-              risk: "draft",
-            },
-            { id: "cancel", label: "Cancel" },
-          ]
-        );
-    if (sign !== "create") {
-      await api.say(
-        "Nothing drafted, and nothing learned: rules only come from runs you sign off."
+    // 02 · Select company and period (FR-01): one sheet, period first.
+    api.stage(2);
+    const named = periodIn(api.prompt);
+    const asked = typeof named === "string" ? named : "sep";
+    let periodId: ReconPeriodId = asked;
+    if (guided) {
+      // A first run isn't the moment for setup questions: the defaults
+      // stand, and say so.
+      if (!cfg)
+        cfg = confirmConfig(company, {
+          timezone: "Asia/Kolkata",
+          currency: "INR",
+        });
+      await api.think(
+        `${RECON_PERIODS[periodId].label} for ${companyOf(company)?.name}, in IST and rupees: configuration v${cfg.version}.`
       );
-      return "Not drafted";
+    } else {
+      await api.checkpoint();
+      const sheet = await decide(
+        api,
+        "Company and period",
+        [
+          {
+            id: "period",
+            header: "Period",
+            question: "Which period should this run reconcile?",
+            why:
+              named && typeof named === "object"
+                ? `“${named.invalid}” has no sources here. Nandhini Deluxe has September 2026 and 1–15 October 2026.`
+                : "The run fixes its period; rows outside it are not counted (R1).",
+            recommended: asked,
+            options: (["sep", "oct"] as const).map((id) => ({
+              id,
+              label: RECON_PERIODS[id].label,
+              hint: `${RECON_PERIODS[id].from} to ${RECON_PERIODS[id].to}`,
+            })),
+          },
+          {
+            id: "company",
+            header: "Company",
+            question: "Which company's books?",
+            recommended: company,
+            options: [
+              { id: company, label: companyOf(company)?.name || company },
+            ],
+            settled: "The company in the top bar",
+          },
+          {
+            id: "tz",
+            header: "Timezone",
+            question: "Which timezone sets the period's boundaries?",
+            recommended: cfg?.timezone || "Asia/Kolkata",
+            options: [
+              {
+                id: cfg?.timezone || "Asia/Kolkata",
+                label: "India (IST, UTC+5:30)",
+              },
+            ],
+            settled: "The company's timezone in AiA 1.0",
+          },
+          {
+            id: "cur",
+            header: "Currency",
+            question: "Which currency does the run reconcile in?",
+            recommended: cfg?.currency || "INR",
+            options: [
+              { id: cfg?.currency || "INR", label: "Indian rupee (INR)" },
+            ],
+            settled: "One currency per run; every source here is INR",
+          },
+        ],
+        [
+          {
+            id: "go",
+            label: cfg ? "Confirm and continue" : "Confirm configuration v1",
+            primary: true,
+            risk: cfg ? undefined : "draft",
+          },
+          { id: "cancel", label: "Not now" },
+        ]
+      );
+      if (sheet.choice !== "go") return "Not started";
+      if (!cfg)
+        cfg = confirmConfig(company, {
+          timezone: sheet.picks.tz,
+          currency: sheet.picks.cur,
+        });
+      periodId = sheet.picks.period as ReconPeriodId;
     }
+    const p = RECON_PERIODS[periodId];
 
-    await api.checkpoint();
-    const creating = await api.step("Creating the drafts", undefined, {
-      skills: ["S7"],
-      tools: ["entry.draft"],
+    // 03 · Provide three sources: what is needed, and what is here.
+    api.stage(3);
+    let attached = api.attachments.map((a) => a.name);
+    if (!attached.length && guided)
+      attached = RECON_SAMPLE[periodId].map((f) => f.name);
+    if (!attached.length) {
+      const sample = RECON_SAMPLE[periodId];
+      await api.think(
+        `${p.label} needs three sources: ${TEMPLATE.sources.map((src) => src.label.toLowerCase()).join(", ")}.`
+      );
+      await api.think(
+        "The books are available from the Tally connector. The bank statement and settlement reports aren't attached yet."
+      );
+      await api.checkpoint();
+      const src = await decide(
+        api,
+        "Sources",
+        [
+          {
+            id: "src",
+            header: "Sources",
+            question: `Use Nandhini Deluxe's ${p.short} sample files?`,
+            why: `${sample.length} files: the HDFC ·0418 statement, card, UPI, Zomato and Swiggy settlement reports, and the Tally receipts.`,
+            recommended: "sample",
+            options: [
+              { id: "sample", label: "Use the sample files" },
+              { id: "own", label: "I'll attach my own" },
+            ],
+          },
+        ],
+        [
+          { id: "go", label: "Continue", primary: true },
+          { id: "cancel", label: "Not now" },
+        ]
+      );
+      if (src.choice !== "go") return "Not started";
+      if (src.picks.src === "own") {
+        await api.say(
+          "Attach the bank statement and settlement reports as CSV with **+**, then ask again. The books come from the Tally connector."
+        );
+        return "Waiting for inputs";
+      }
+      attached = sample.map((f) => f.name);
+    }
+    api.sources(attached);
+    await api.coach(2, NOTE.check);
+    const reading = await api.step(
+      `Reading ${attached.length} files`,
+      undefined,
+      { skills: ["S1"], tools: ["doc.read", "doc.fingerprint"] }
+    );
+    await api.wait(700);
+    let run = startRun(company, periodId, attached);
+    const turnedAway = run.files.length;
+    reading(
+      `${liveSources(run).length} sources taken in${turnedAway ? ` · ${turnedAway} file${turnedAway === 1 ? "" : "s"} turned away` : ""}`
+    );
+
+    // 04 · Validate inputs (FR-03).
+    api.stage(4);
+    const checking = await api.step("Validating rows", undefined, {
+      skills: ["S2"],
+      tools: ["schema.validate"],
     });
     await api.wait(600);
-    const made = createReconDrafts(run.id);
-    creating(
-      `Created ${made.sales} sales drafts · coded ${made.bank} bank lines`
+    let ready = readiness(run);
+    const accepted = liveSources(run).reduce(
+      (n, s) => n + s.accepted.length,
+      0
     );
-    const r3 = getRun(run.id)!;
-    api.touch(r3.createdItemIds);
-    api.onUndo(() => undoRecon(run.id, made.before));
-    api.status(null);
+    checking(`${accepted} rows accepted · ${ready.rejected} rejected`);
+    api.show({ kind: "recon", company, runId: run.id, view: "sources" });
+    api.status(`Reconciling ${p.short}`, { done: 4, total: 8 });
 
-    // The answer, and only the answer (20 Oct 2026): does it reconcile, what
-    // needs you, what was made. Everything else is in the documents below.
+    // FR-02 AC3: a missing source names itself and the next action.
+    if (ready.missing.length || ready.blockers.length) {
+      await api.say(
+        [
+          ready.missing.length
+            ? `Not ready: no **${ready.missing.map((k) => KIND_LABEL[k].toLowerCase()).join(" or ")}** source. Attach it as CSV and ask again.`
+            : "",
+          ...ready.blockers.map((b) => b.text),
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+      return "Waiting for inputs";
+    }
+    if (!ready.rejected)
+      await api.think(
+        "Every row passed: no missing fields, duplicates, unclear dates or other currencies."
+      );
+    else
+      await api.think(
+        `${ready.rejected} row${ready.rejected === 1 ? "" : "s"} can't be read. They stay out unless you replace the file or accept a partial run.`
+      );
+
+    // US-03 AC2: rejected rows are excluded only on purpose.
+    if (ready.rejected) {
+      const bad = liveSources(run).filter((s) => s.rejected.length);
+      await api.coach(2, NOTE.rejected);
+      await api.checkpoint();
+      const { choice, picks } = await decide(
+        api,
+        "Rejected rows",
+        [
+          {
+            id: "rejected",
+            header: "Rejected rows",
+            question: `${ready.rejected} row${ready.rejected === 1 ? "" : "s"} in ${bad.map((s) => s.file).join(", ")} can't be read. What should this run do?`,
+            why: bad
+              .flatMap((s) =>
+                s.rejected.map((r) => `Line ${r.line}: ${r.reason}.`)
+              )
+              .join(" "),
+            recommended: "replace",
+            options: [
+              {
+                id: "replace",
+                label: "Replace with the corrected export",
+                hint: `${sampleCorrection()}, a new version of the books source`,
+              },
+              {
+                id: "partial",
+                label: `Run without the ${ready.rejected} rows`,
+                hint: "The result and every export say Partial",
+              },
+            ],
+          },
+        ],
+        [
+          { id: "go", label: "Continue", primary: true },
+          { id: "cancel", label: "Cancel the run" },
+        ]
+      );
+      if (choice !== "go") {
+        cancelRun(run.id);
+        await api.say(
+          "Cancelled. Nothing was run, so there's no result to review."
+        );
+        return "Cancelled";
+      }
+      if (picks.rejected === "replace") {
+        const fix = await api.step(`Reading ${sampleCorrection()}`, undefined, {
+          skills: ["S1", "S2"],
+          tools: ["schema.validate"],
+        });
+        await api.wait(500);
+        run = replaceSource(run.id, bad[0].file, sampleCorrection());
+        ready = readiness(run);
+        fix(`Books v2 · ${ready.rejected} rows rejected`);
+      } else run = acknowledgePartial(run.id);
+    }
+
+    // 05 · Run reconciliation (R1–R8).
+    api.stage(5);
+    await api.checkpoint();
+    const matching = await api.step(
+      "Matching across all three sources",
+      undefined,
+      { skills: ["S3"], tools: ["recon.match"] }
+    );
+    await api.coach(3, NOTE.match);
+    await api.wait(800);
+    run = executeRun(run.id);
+    let v = currentVersion(run)!;
+    matching(
+      `${v.groups.length} match groups · ${v.exceptions.length} exceptions`
+    );
+    api.status(`Reconciling ${p.short}`, { done: 5, total: 8 });
+
+    // 06 · Inspect matches and exceptions, before anything is asked.
+    api.stage(6);
+    const c = v.counts;
+    await api.think(
+      `Checking why each of the ${v.exceptions.length} exceptions didn't match, and which questions would settle them.`
+    );
     await api.say(
       [
-        summaryText(r3),
-        needsYou(r3, flagged.length),
-        `**Created ${made.sales} sales drafts and coded ${made.bank} bank lines.** Nothing is approved or posted.`,
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
+        `**${p.label}: ${v.groups.length} match groups, ${v.exceptions.length} exceptions.** The report at the end of this run has every row behind these figures.`,
+        "",
+        summaryTable(run, v),
+        "",
+        `${c.bank.accepted} bank, ${c.settlement.accepted} settlement and ${c.books.accepted} books rows accepted${c.books.rejected ? `; ${c.books.rejected} rejected` : ""}.`,
+      ].join("\n")
+    );
+
+    // 07 · Resolve and review: questions first, then links and deferrals.
+    api.stage(7);
+    const open = run.questions.filter((q) => !q.answer);
+    if (open.length) {
+      await api.coach(4, NOTE.decide);
+      await api.checkpoint();
+      const { choice, picks } = await decide(
+        api,
+        `Resolve ${p.short}`,
+        open.map((q) => ({
+          id: q.id,
+          header: q.id.split(":")[1] || "Question",
+          question: q.text,
+          why: `${q.detail} Affects ${q.exceptionIds.length} exception${q.exceptionIds.length === 1 ? "" : "s"}.`,
+          recommended: q.options[0].id,
+          options: q.options,
+        })),
+        [
+          { id: "go", label: "Submit and finish the run", primary: true },
+          { id: "cancel", label: "Cancel the run" },
+        ]
+      );
+      if (choice !== "go") {
+        cancelRun(run.id);
+        await api.say(
+          "Cancelled. The run stays incomplete and won't show as reconciled."
+        );
+        return "Cancelled";
+      }
+      for (const q of open) run = answerQuestion(run.id, q.id, picks[q.id]);
+    }
+
+    run = getRun(run.id)!;
+    v = currentVersion(run)!;
+    // The report is the file (21 Oct 2026): no result panel beside the chat.
+    // The guided sample run opens the report, where its hints point.
+    api.show(
+      { kind: "recon-report", company, runId: run.id, version: v.n },
+      { open: reconOnboarding().guided || undefined }
+    );
+    const byYou = v.groups.filter((g) => g.origin === "human").length;
+    await api.say(
       [
-        { label: "Sales › Needs Review", href: "/inbox?module=AR&tab=review" },
-        { label: "Banking", href: "/inbox?module=BANK" },
-      ]
+        `**${p.label}, version ${v.n}: ${v.groups.length} match groups${byYou ? `, ${byYou} linked by your answer` : ""}; ${v.exceptions.length} exceptions left.** ${v.completeness === "partial" ? "Partial: rejected rows were excluded. " : ""}Nothing was posted or changed in your books.`,
+        "",
+        v.exceptions.length
+          ? `To resolve the ${v.exceptions.length} exceptions, open the report and pick an Action and a Reason in the yellow cells on its Exceptions sheet, here in Neo or in the downloaded file. Or tell me, for example “defer E1, payout file due 3 Oct”. Either way the reconciliation runs again as a new version.`
+          : "Submit the run for review.",
+      ].join("\n")
     );
-    // The documents, as one row (the thread groups them).
-    (
-      ["reports", "payouts", "sales", "bank", "register", "drafts"] as const
-    ).forEach((view) =>
-      api.show({ kind: "recon", company, runId: run.id, view }, { open: false })
-    );
-    api.suggest(
-      periodId === "sep"
-        ? ["Close September with the 1–7 Oct statement"]
-        : ["What has Neo learned for Nandhini Deluxe?"]
-    );
-    return `${made.sales + made.bank} drafts · ${run.id}`;
+    await api.coach(5, NOTE.review);
+    api.suggest([
+      ...(v.exceptions.length ? ["Try an edited report"] : []),
+      `Submit ${p.short} for review`,
+      ...(run.questions.some((q) => q.answer === "link")
+        ? ["Save the answer to the configuration"]
+        : []),
+    ]);
+    return `${v.groups.length} groups · ${v.exceptions.length} exceptions`;
   },
 };
 

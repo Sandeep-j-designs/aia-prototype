@@ -1,5 +1,6 @@
 import {
   Banknote,
+  GitCompareArrows,
   Inbox,
   ShoppingBag,
   ShoppingCart,
@@ -7,6 +8,7 @@ import {
 } from "lucide-react";
 import type { Journey } from "@/types/pages/guide";
 import { INBOX_TOUR } from "./inbox-tour";
+import { RECON_TOUR } from "@/config/pages/neo/onboarding";
 
 /**
  * The journeys the Guide button offers.
@@ -20,6 +22,17 @@ import { INBOX_TOUR } from "./inbox-tour";
  * Completion comes back per journey; nothing here is client-derived.
  */
 export const JOURNEYS: Journey[] = [
+  {
+    // Three-way reconciliation (21 Oct 2026). Start opens its welcome and
+    // explainer in Neo; the steps are the hints of the guided sample run.
+    id: "recon",
+    title: "Three-way reconciliation",
+    description: "Bank, settlements and books, reconciled in Neo",
+    icon: GitCompareArrows,
+    art: "ledger",
+    steps: RECON_TOUR,
+    complete: false,
+  },
   {
     id: "inbox",
     title: "Inbox",

@@ -15,6 +15,49 @@ type Props = {
 };
 
 const CITE = "#neo-ref=";
+
+type HNode = {
+  type: string;
+  value?: string;
+  tagName?: string;
+  properties?: Record<string, unknown>;
+  children?: HNode[];
+};
+
+/**
+ * While an answer streams (22 Oct 2026), every word is its own span, so a
+ * word that has landed keeps its place and only the new ones mount — each
+ * rising out of a soft blur as it arrives. Settled, the plugin is dropped and
+ * the answer is plain text again.
+ */
+const rehypeWords = () => (tree: HNode) => {
+  const walk = (node: HNode) => {
+    if (!node.children) return;
+    const out: HNode[] = [];
+    node.children.forEach((c) => {
+      if (c.type !== "text") {
+        walk(c);
+        out.push(c);
+        return;
+      }
+      (c.value || "").split(/(\s+)/).forEach((p) => {
+        if (!p) return;
+        out.push(
+          p.trim()
+            ? {
+                type: "element",
+                tagName: "span",
+                properties: { className: ["neo-w"] },
+                children: [{ type: "text", value: p }],
+              }
+            : { type: "text", value: p }
+        );
+      });
+    });
+    node.children = out;
+  };
+  walk(tree);
+};
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** A cell that holds a figure: ₹, digits, separators, a sign or a %. */
@@ -140,12 +183,18 @@ const Prose = ({ text, onRef, streaming, className }: Props) => {
       },
       table: ({ children }) => <Table>{children}</Table>,
       th: ({ children, style }) => (
-        <th style={style} data-num={NUMERIC.test(textOf(children).trim()) || undefined}>
+        <th
+          style={style}
+          data-num={NUMERIC.test(textOf(children).trim()) || undefined}
+        >
           {children}
         </th>
       ),
       td: ({ children, style }) => (
-        <td style={style} data-num={NUMERIC.test(textOf(children).trim()) || undefined}>
+        <td
+          style={style}
+          data-num={NUMERIC.test(textOf(children).trim()) || undefined}
+        >
           {children}
         </td>
       ),
@@ -158,7 +207,11 @@ const Prose = ({ text, onRef, streaming, className }: Props) => {
       className={cn("neo-prose", streaming && "is-streaming", className)}
       aria-busy={streaming || undefined}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={streaming ? [rehypeWords] : undefined}
+        components={components}
+      >
         {source}
       </ReactMarkdown>
     </div>

@@ -1,3 +1,5 @@
+import { useRouter } from "next/router";
+import { openReconWelcome } from "@/hooks/pages/neo/use-recon-onboarding";
 import React, {
   createContext,
   useCallback,
@@ -54,6 +56,21 @@ const GuideProvider = ({ children }: { children: React.ReactNode }) => {
     setActive(id);
   }, []);
 
+  /* The launcher's Start. Three-way reconciliation begins with its welcome
+     and explainer in Neo, not with hints: those belong to the sample run,
+     which starts them itself (components/neo/common/recon-card.tsx). */
+  const router = useRouter();
+  const launch = useCallback(
+    (id: JourneyId) => {
+      if (id !== "recon") return startJourney(id);
+      setLauncher(false);
+      openReconWelcome();
+      if (!/[?&]module=NEO\b/.test(router.asPath))
+        void router.push("/inbox?module=NEO");
+    },
+    [router, startJourney]
+  );
+
   const end = useCallback(
     (finished: boolean) => {
       /* Finished or skipped, the screen goes back the way the tour found it —
@@ -69,7 +86,8 @@ const GuideProvider = ({ children }: { children: React.ReactNode }) => {
       /* Finishing returns to the launcher, so the tick that was just earned is
          visible and the next journey is one click away. Skipping does not —
          someone who pressed Skip tour is asking for the screen back. */
-      if (finished) setLauncher(true);
+      // The recon hints end inside a run; the launcher would cover it.
+      if (finished && active !== "recon") setLauncher(true);
     },
     [active]
   );
@@ -143,7 +161,7 @@ const GuideProvider = ({ children }: { children: React.ReactNode }) => {
         journeys={JOURNEYS}
         completed={completed}
         onClose={() => setLauncher(false)}
-        onStart={startJourney}
+        onStart={launch}
       />
       {journey && current && (
         <>

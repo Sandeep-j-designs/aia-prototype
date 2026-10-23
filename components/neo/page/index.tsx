@@ -10,16 +10,16 @@ import { PanelLeftOpen } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import NeoNav from "./nav";
 
-export type NeoPageId = "chat" | "skills";
+export type NeoPageId = "chat" | "agents";
 
-export const NEO_PAGES: NeoPageId[] = ["chat", "skills"];
+export const NEO_PAGES: NeoPageId[] = ["chat", "agents"];
 
 export const neoHref = (page: NeoPageId) =>
   page === "chat" ? "/inbox?module=NEO" : `/inbox?module=NEO&page=${page}`;
 
 const PAGE_TITLE: Record<NeoPageId, string> = {
   chat: "Chat",
-  skills: "Skills",
+  agents: "Agents",
 };
 
 /** Opens Neo's column as a sheet, where there's no room to keep it open. */
@@ -51,46 +51,16 @@ type Props = { page: NeoPageId; children: ReactNode };
 
 /**
  * Neo as a place (19 Oct 2026): the app rail folds to icons and Neo's own
- * column takes its place — Chat, Skills and the recent chats. The docked panel stays for asking from any other screen; it
+ * column takes its place — Chat, Agents and the recent chats. The docked panel stays for asking from any other screen; it
  * holds the same conversation.
  *
  * Below 1024px the column would leave the chat a sliver, so it becomes a
  * sheet over the page, opened from the page's header and closed by picking
  * anything in it, the scrim or Esc.
  */
-const NAV_KEY = "aia.neo.navOpen";
-
-/**
- * Whether Neo's column is open: what you last chose, else open from 1440px
- * and folded below, where every pixel goes to the chat (20 Oct 2026).
- */
-const useNavOpen = () => {
-  const [open, setOpen] = useState(true);
-  useEffect(() => {
-    let saved: string | null = null;
-    try {
-      saved = window.localStorage.getItem(NAV_KEY);
-    } catch {
-      /* storage blocked: follow the width */
-    }
-    setOpen(saved ? saved === "1" : window.innerWidth >= 1440);
-  }, []);
-  const toggle = () =>
-    setOpen((v) => {
-      try {
-        window.localStorage.setItem(NAV_KEY, v ? "0" : "1");
-      } catch {
-        /* the choice holds for this visit */
-      }
-      return !v;
-    });
-  return [open, toggle] as const;
-};
-
 const NeoPage = ({ page, children }: Props) => {
   const router = useRouter();
   const [menu, setMenu] = useState(false);
-  const [navOpen, toggleNav] = useNavOpen();
   useEffect(() => setMenu(false), [router.asPath]);
   useEffect(() => {
     if (!menu) return;
@@ -106,12 +76,7 @@ const NeoPage = ({ page, children }: Props) => {
     <MenuContext.Provider value={() => setMenu(true)}>
       <div className="neo-scope flex h-full min-h-0 min-w-0 flex-1 bg-background">
         <div className="hidden lg:flex">
-          <NeoNav
-            page={page}
-            onPage={go}
-            folded={!navOpen}
-            onToggle={toggleNav}
-          />
+          <NeoNav page={page} onPage={go} />
         </div>
         {menu && (
           <div className="fixed inset-0 z-50 lg:hidden">

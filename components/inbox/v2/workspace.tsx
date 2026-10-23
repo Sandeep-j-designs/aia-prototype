@@ -215,7 +215,8 @@ import KeyboardShortcuts from "./keyboard-shortcuts";
 import PreparedTag from "@/components/neo/common/prepared-tag";
 import NeoPage, { NEO_PAGES, type NeoPageId } from "@/components/neo/page";
 import NeoChat from "@/components/neo/page/chat";
-import NeoSkills from "@/components/neo/page/skills";
+import NeoAgents from "@/components/neo/page/agents";
+import { agentById } from "@/config/pages/neo/mock-agents";
 import ChatTitle from "@/components/neo/page/chat-title";
 import { setNeoSelection } from "@/utils/pages/neo/selection";
 import type { Crumb } from "@/components/top-bar-layout";
@@ -2053,7 +2054,12 @@ export default function Workspace() {
         "Neo",
         neoPage === "chat"
           ? { label: "Chat", node: <ChatTitle compact onBar /> }
-          : "Skills",
+          : "Agents",
+        ...(neoPage === "agents" &&
+        router.query.view === "page" &&
+        agentById(router.query.agent as string)
+          ? [agentById(router.query.agent as string)!.name]
+          : []),
       ]
     : undefined;
   /** A new organisation becomes the active one, as production's create does. */
@@ -3517,7 +3523,7 @@ export default function Workspace() {
               {neoPage === "chat" ? (
                 <NeoChat />
               ) : (
-                <NeoSkills key={state.company} company={state.company} />
+                <NeoAgents key={state.company} company={state.company} />
               )}
             </NeoPage>
           ) : gstModule ? (

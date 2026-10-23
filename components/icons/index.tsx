@@ -34,6 +34,7 @@ export {
   CornerDownLeft,
   Crosshair,
   Download,
+  FileSpreadsheet,
   Ellipsis,
   FileStack,
   FileText,
@@ -126,8 +127,39 @@ export const Sparkle = make(
 );
 export const Sparkles = Sparkle;
 export const AiMark = Sparkle;
-/** Neo's mark: the sparkle's star, solid, without its accents. Neo only. */
+/**
+ * Neo's connection mark: two equal ledger columns joined into a rounded N.
+ * One colour and generous gaps keep it readable at
+ * toolbar sizes. Keep the export name for existing Neo consumers.
+ */
 export const NeoStar = make(
   "NeoStar",
-  <path d={SPARKLE_PATH} fill="currentColor" stroke="none" />
+  <path
+    d="M5 19V6.2C5 4.9 5.8 4.6 6.6 5.6L17.4 18.4C18.2 19.4 19 19.1 19 17.8V5"
+    strokeWidth={3.4}
+  />
+);
+
+/*
+ * Neo's own tabs (21 Oct 2026), drawn for Neo only, from primitives on the
+ * 24px grid at lucide's stroke so they sit with the rest. Chat: a speech
+ * bubble holding Neo's connection mark. Agents: the seam — three sources (bank,
+ * settlements, books) meeting in one node, as the onboarding draws it.
+ */
+export const NeoChat = make(
+  "NeoChat",
+  <>
+    <path d="M6.5 4h11A3.5 3.5 0 0 1 21 7.5v6a3.5 3.5 0 0 1-3.5 3.5h-7L6.5 20.5V17A3.5 3.5 0 0 1 3 13.5v-6A3.5 3.5 0 0 1 6.5 4z" />
+    <path d="M9 14V8L15 14V8" strokeWidth={1.7} />
+  </>
+);
+export const NeoAgents = make(
+  "NeoAgents",
+  <>
+    <path d="M3 6h3.5c3.5 0 4.5 6 8 6" />
+    <path d="M3 12h11.5" />
+    <path d="M3 18h3.5c3.5 0 4.5-6 8-6" />
+    <circle cx="17" cy="12" r="2.5" fill="currentColor" fillOpacity={0.25} />
+    <path d="M19.5 12H21" />
+  </>
 );

@@ -1,28 +1,26 @@
 /**
- * What Neo is, in phase one (21 Oct 2026, from "3-Way Recon Skill
- * Architecture" v3). Five words, one meaning each:
+ * What Neo is, in phase one (aligned to the AiA 2.0 PRD on 21 Oct 2026).
+ * Five words, one meaning each:
  *
- * - Agent — Neo. One agent with one goal: three-way reconciliation. It runs
- *   the pipeline, keeps the run's state, picks the next skill or tool, stops
- *   to ask, and drafts; it never posts.
- * - Skill — model work (S1–S10): a prompt, the tools it may call and an
- *   output schema. Every output carries evidence and confidence. A skill
- *   never does arithmetic and never posts. The agent chooses them; a person
- *   never invokes one directly.
- * - Tool — engineered code (books.*, recon.*, entry.*, post.*): computes,
- *   matches, drafts, posts and verifies. Deterministic.
- * - Rule — PM-owned and versioned (DOC-01, MAT-02…), with the client's
- *   approved policy and learned rules as an overlay on top.
- * - Job — what a person hands the agent: set up, reconcile a period, close
- *   it, review what it learned. The prompt box's / commands.
+ * - Agent — Neo. One agent with one job: three-way reconciliation, read
+ *   only. It takes a run from setup to an exportable, reviewed result,
+ *   picks the next skill or tool, and stops to ask. It never posts.
+ * - Skill — model work (S1–S5): a prompt, the tools it may call and an
+ *   output schema, with evidence. A skill never matches, computes or
+ *   decides a tie; the engine does. The agent chooses skills; a person
+ *   never invokes one.
+ * - Tool — engineered code: reads, validation, the matching engine,
+ *   export. Deterministic.
+ * - Rule — the PRD's matching contract (R1–R8) and requirements (FR-xx),
+ *   with the company's confirmed configuration on top.
+ * - Job — what a person hands the agent: set up, reconcile a period,
+ *   review it, export it. The prompt box's / commands.
  *
  * DEV: GET /api/neo/agent returns the profile; skills and jobs are static
- * per release. The model's runtime registers each skill as a tool with the
- * same id.
+ * per release.
  */
 
-export type NeoSkillId =
-  "S1" | "S2" | "S3" | "S4" | "S5" | "S6" | "S7" | "S8" | "S9" | "S10";
+export type NeoSkillId = "S1" | "S2" | "S3" | "S4" | "S5";
 
 /** One unit of model work. */
 export type NeoSkill = {
@@ -36,11 +34,11 @@ export type NeoSkill = {
   rules: string[];
   /** The engineered tools it may call. */
   tools: string[];
-  /** The pipeline steps it works in (section 2 of the brief). */
+  /** The journey steps it works in (PRD section 3). */
   steps: number[];
 };
 
-/** A step of the agent's pipeline, and who does the work in it. */
+/** A step of the PRD's journey, and who does the work in it. */
 export type NeoPipelineStep = {
   n: number;
   label: string;
@@ -49,15 +47,16 @@ export type NeoPipelineStep = {
   output: string;
 };
 
-/** The four statuses every source row ends in (section 9). */
+/** Where every source row ends (R8). */
 export type NeoRowStatus = {
-  id: "needs-input" | "ready" | "accounted" | "suspense";
+  id: "matched" | "exception" | "unmatched" | "rejected";
   label: string;
   meaning: string;
 };
 
 /** The agent: one goal, what it may do, what it never does. */
 export type NeoAgentProfile = {
+  id: string;
   name: string;
   /** What kind of agent, in a few words. */
   role: string;
@@ -72,13 +71,13 @@ export type NeoAgentProfile = {
 
 /** A job a person hands the agent, typed after / in the prompt box. */
 export type NeoJob = {
-  id: "setup" | "recon" | "close" | "learned";
+  id: "setup" | "recon" | "review" | "export";
   slash: string;
   name: string;
   does: string;
   /** The request that runs it. */
   prompt: string;
-  /** The pipeline steps it covers, as the brief numbers them. */
+  /** The user stories it covers. */
   steps: string;
   skills: NeoSkillId[];
   /** Only some clients can use it: the reason, when this one can't. */

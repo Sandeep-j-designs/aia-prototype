@@ -8,6 +8,7 @@ import NeoProvider from "@/components/neo/provider";
 import NeoShell from "@/components/neo/shell";
 import NeoPanel from "@/components/neo";
 import NeoPresence from "@/components/neo/presence";
+import ReconWelcome from "@/components/neo/onboarding/recon-welcome";
 
 const open_sans = localFont({
   src: "../public/fonts/open-sans-latin.woff2",
@@ -17,9 +18,18 @@ const open_sans = localFont({
 // IBM Plex Mono for voucher and invoice IDs inside Neo's documents.
 const plexMono = localFont({
   src: [
-    { path: "../public/fonts/ibm-plex-mono-latin-400-normal.woff2", weight: "400" },
-    { path: "../public/fonts/ibm-plex-mono-latin-500-normal.woff2", weight: "500" },
-    { path: "../public/fonts/ibm-plex-mono-latin-600-normal.woff2", weight: "600" },
+    {
+      path: "../public/fonts/ibm-plex-mono-latin-400-normal.woff2",
+      weight: "400",
+    },
+    {
+      path: "../public/fonts/ibm-plex-mono-latin-500-normal.woff2",
+      weight: "500",
+    },
+    {
+      path: "../public/fonts/ibm-plex-mono-latin-600-normal.woff2",
+      weight: "600",
+    },
   ],
   display: "swap",
 });
@@ -82,6 +92,8 @@ export default function App({ Component, pageProps }: AppProps) {
           </NeoShell>
           <NeoPanel />
           <NeoPresence />
+          {/* Three-way reconciliation's welcome: opens on every load. */}
+          <ReconWelcome />
         </NeoProvider>
       </GuideProvider>
       <Toaster position="bottom-right" closeButton />

@@ -18,14 +18,16 @@ import type {
 } from "@/types/pages/neo";
 import { MOCK_NEO_CHATS } from "@/config/pages/neo/mock-chats";
 import { opensInCanvas } from "@/utils/pages/neo/canvas";
+import {
+  reconOnboarding,
+  setCoach,
+} from "@/hooks/pages/neo/use-recon-onboarding";
 import { isNeoHref, onNeoChatPage, onNeoPage } from "@/utils/pages/neo/route";
 import { subscribeNeoSelection } from "@/utils/pages/neo/selection";
 import { findName } from "@/utils/pages/neo";
-import { reviewSetFor } from "@/utils/pages/neo/review-sets";
 import { logActivity } from "@/hooks/pages/inbox/use-activity";
 import {
   companyOf,
-  configure,
   getState,
   subscribeStore,
   useStore,
@@ -146,7 +148,7 @@ export const useNeoRuntime = () => {
   // The key handler is bound once; it reads the route through this.
   const routerRef = useRef(router);
   routerRef.current = router;
-  const { company, items } = useStore();
+  const { company } = useStore();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<NeoMessage[]>([]);
   // Edits and retries read the conversation outside a render.
@@ -266,30 +268,8 @@ export const useNeoRuntime = () => {
     [detached, onNeo, carried, itemId, selectedIds, module, company]
   );
 
-  /*
-    A draft this chat handed over for review — a reconciliation run's sales
-    drafts — is a subtask of the chat (20 Oct 2026):
-    on the bill, the dock opens on the bill's checklist and the questions
-    asked about it, with the chat one click up. `dockView` is that click;
-    every new bill opens on its own view again.
-  */
-  const [dockView, setDockView] = useState<"bill" | "chat">("bill");
-  useEffect(() => setDockView("bill"), [itemId]);
-  const subtask = useMemo(() => {
-    if (onNeo || !itemId) return null;
-    const set = reviewSetFor(messages, items, itemId);
-    return set ? { itemId, set } : null;
-  }, [onNeo, itemId, items, messages]);
-  const billFocus = subtask && dockView === "bill" ? subtask.itemId : null;
-  const billFocusRef = useRef(billFocus);
-  billFocusRef.current = billFocus;
-  // Which bill each run was asked from; its replies belong there too.
-  const runScopes = useRef(new Map<string, string>());
-  const scopeOf = useCallback(
-    (m: NeoMessage) =>
-      m.scope || (m.runId ? runScopes.current.get(m.runId) : undefined),
-    []
-  );
+  // A turn's scope (unused in phase one: nothing opens as a subtask).
+  const scopeOf = useCallback((m: NeoMessage) => m.scope, []);
 
   /*
     Leaving Neo's chat page for a record keeps the conversation on screen:
@@ -344,15 +324,6 @@ export const useNeoRuntime = () => {
         ]);
         return;
       }
-      // A bill of a set this chat handed over opens with the set as the
-      // review queue, so the form's counter, ‹ › and Approve & Next walk it
-      // and say so.
-      const set = reviewSetFor(
-        messagesRef.current,
-        getState().items,
-        ref.itemId
-      );
-      if (set) configure({ queue: set.ids, queueFrom: `inbox:${set.name}` });
       if (ref.target === "inbox") {
         if (router.asPath !== "/inbox") await router.push("/inbox");
         dockAfter(fromChat, "/inbox");
@@ -361,11 +332,6 @@ export const useNeoRuntime = () => {
       }
       await router.push(`/inbox?id=${encodeURIComponent(ref.itemId)}`);
       dockAfter(fromChat, "/inbox?id=");
-      // A bill of this chat's set is its subtask: the dock stays, on it.
-      if (set) {
-        setOpen(true);
-        setDockView("bill");
-      }
     },
     [router]
   );
@@ -393,29 +359,6 @@ export const useNeoRuntime = () => {
       const runId = uid("run");
       const ctx = structuredClone(opts.context || context);
       let runText = text;
-      /*
-        Asked from a bill's subtask, the turn stays with that bill — unless
-        it is about the set ("approve all the drafts", "the rest"), which
-        is the chat's business: answered there, and the dock goes up to it.
-        An edit, retry or continue keeps the turn where it was asked.
-      */
-      const asked = opts.userId
-        ? messagesRef.current.find((m) => m.id === opts.userId)
-        : undefined;
-      let scope = opts.userId
-        ? asked?.scope
-        : billFocusRef.current || undefined;
-      if (
-        scope &&
-        !opts.userId &&
-        /\b(this run|all (the |of the )?(drafts|vouchers)|every (draft|voucher)|the rest)\b/i.test(
-          text
-        )
-      ) {
-        scope = undefined;
-        setDockView("chat");
-      }
-      if (scope) runScopes.current.set(runId, scope);
       // Said back before the answer: how Neo read a follow-up, or that it
       // switched client because the request named one.
       const notes: string[] = [];
@@ -442,7 +385,6 @@ export const useNeoRuntime = () => {
           {
             id: uid("m"),
             role: "user",
-            scope,
             text,
             attachments: attachments.length ? attachments : undefined,
           },
@@ -471,7 +413,6 @@ export const useNeoRuntime = () => {
           {
             id: uid("m"),
             role: "neo",
-            scope,
             text: `Neo here only answers about ${here}. Switch to **${elsewhere.name}** in the top bar to ask about it.`,
           },
         ]);
@@ -497,7 +438,6 @@ export const useNeoRuntime = () => {
           {
             id: uid("m"),
             role: "neo",
-            scope,
             text: f.text,
             links: f.links.length ? f.links : undefined,
             suggestions: f.suggestions,
@@ -544,6 +484,8 @@ export const useNeoRuntime = () => {
 
       if (noteSteps.length) setMessages((ms) => [...ms, ...noteSteps]);
       let stepsMsg: string | null = null;
+      // The journey step the run is on; the next reasoning block opens on it.
+      let phase: number | undefined;
       let lastCard: string | null = null;
       // The run is waiting on a sign-off: Esc then cancels it.
       let atSignOff = false;
@@ -580,6 +522,18 @@ export const useNeoRuntime = () => {
         const id = uid("m");
         stepsMsg = null;
         setMessages((ms) => [...ms, { id, role: "neo", runId, ...m }]);
+        return id;
+      };
+      // The open reasoning block, or a new one: everything Neo reads and
+      // works out between two things it says or asks.
+      const reasoning = () => {
+        if (stepsMsg) return stepsMsg;
+        const id = uid("m");
+        stepsMsg = id;
+        setMessages((ms) => [
+          ...ms,
+          { id, role: "neo", runId, steps: [], phase },
+        ]);
         return id;
       };
       const waitFor = (id: string, status: NeoRunStatus = "needs-you") =>
@@ -621,12 +575,13 @@ export const useNeoRuntime = () => {
             push({ text: said, links });
             return;
           }
-          // Written out word by word, as a model streams: about 30ms a
-          // word, never more than 2.4s for the whole answer.
+          // Written out word by word, as a model streams: a beat before the
+          // first word, then about 30ms a word, never more than 2.4s.
           if (reducedMotion() || replay.length) {
             push({ text: said, links });
             return;
           }
+          await wait(280);
           const id = push({ text: "", links: undefined, streaming: true });
           const words = said.split(/(\s+)/);
           const perTick = Math.max(2, Math.ceil(words.length / 80));
@@ -636,50 +591,63 @@ export const useNeoRuntime = () => {
             patch(id, (m) => ({ ...m, text: shown }));
             await wait(tick);
           }
-          patch(id, (m) => ({ ...m, text: said, links, streaming: false }));
+          patch(id, (m) => ({
+            ...m,
+            text: said,
+            links,
+            streaming: false,
+          }));
+        },
+        think: async (text) => {
+          guard();
+          const id = reasoning();
+          const now = Date.now();
+          patch(id, (m) => ({
+            ...m,
+            steps: [
+              ...(m.steps || []),
+              {
+                id: uid("s"),
+                label: text,
+                status: "done",
+                kind: "thought",
+                stage: phase,
+                startedAt: now,
+                endedAt: now,
+              },
+            ],
+          }));
+          // Thoughts sit folded under the live line, so a short beat each.
+          await wait(Math.min(700, 240 + text.length * 4));
+        },
+        sources: (names) => {
+          guard();
+          const id = reasoning();
+          patch(id, (m) => ({
+            ...m,
+            sources: [...new Set([...(m.sources || []), ...names])],
+          }));
         },
         step: async (label, cite, by) => {
           guard();
           const stepId = uid("s");
-          if (!stepsMsg) {
-            const id = uid("m");
-            stepsMsg = id;
-            setMessages((ms) => [
-              ...ms,
+          const id = reasoning();
+          patch(id, (m) => ({
+            ...m,
+            steps: [
+              ...(m.steps || []),
               {
-                id,
-                role: "neo",
-                runId,
-                steps: [
-                  {
-                    id: stepId,
-                    label,
-                    status: "running",
-                    cite,
-                    by,
-                    startedAt: Date.now(),
-                  },
-                ],
+                id: stepId,
+                label,
+                status: "running",
+                cite,
+                by,
+                stage: phase,
+                startedAt: Date.now(),
               },
-            ]);
-          } else {
-            const id = stepsMsg;
-            patch(id, (m) => ({
-              ...m,
-              steps: [
-                ...(m.steps || []),
-                {
-                  id: stepId,
-                  label,
-                  status: "running",
-                  cite,
-                  by,
-                  startedAt: Date.now(),
-                },
-              ],
-            }));
-          }
-          const owner = stepsMsg!;
+            ],
+          }));
+          const owner = id;
           await wait(120);
           return (done?: string) =>
             patch(owner, (m) => ({
@@ -696,9 +664,30 @@ export const useNeoRuntime = () => {
               ),
             }));
         },
+        coach: async (step, note) => {
+          guard();
+          if (!reconOnboarding().guided) return;
+          // A held note waits for Continue, or for the run to stop.
+          await Promise.race([
+            setCoach({ step, ...note }),
+            new Promise<void>((_, reject) =>
+              abort.signal.addEventListener(
+                "abort",
+                () => reject(new Stopped()),
+                { once: true }
+              )
+            ),
+          ]);
+          guard();
+        },
         suggest: (prompts) => {
           guard();
           push({ suggestions: prompts });
+        },
+        stage: (n) => {
+          guard();
+          phase = n;
+          if (stepsMsg) patch(stepsMsg, (m) => ({ ...m, phase: n }));
         },
         askText: async (question, o) => {
           guard();
@@ -796,15 +785,22 @@ export const useNeoRuntime = () => {
         },
         show: (card, opts) => {
           guard();
+          // A document shown along the way doesn't end the reasoning: the
+          // block keeps its later lines, with the tile under it.
+          const open = stepsMsg;
           const id = push({ card });
+          stepsMsg = open;
           // A list to read opens beside the answer, not over it: on a phone
           // the canvas covers the chat, so there it waits for a tap.
           // Below 1440px a document opens over the chat, so it waits for a
           // click there; a run's closing documents never open themselves.
+          // `open: true` opens it at any width from a small laptop up:
+          // the guided recon run points its hints at the document.
           if (
-            opts?.open !== false &&
             opensInCanvas(card) &&
-            window.innerWidth >= 1440
+            (opts?.open === true
+              ? window.innerWidth >= 768
+              : opts?.open !== false && window.innerWidth >= 1440)
           )
             setCanvas(id);
           return (next) => patch(id, (m) => ({ ...m, card: next }));
@@ -1321,10 +1317,6 @@ export const useNeoRuntime = () => {
   }, []);
 
   return {
-    subtask,
-    billFocus,
-    dockView,
-    setDockView,
     scopeOf,
     open,
     setOpen,

@@ -192,8 +192,19 @@ const WIDE_HEADER = [
   "Grand Total",
 ];
 type WideLine = [
-  string, string, string, keyof typeof ITEMS, number, number,
-  (keyof typeof ITEMS) | null, number, number, number, number, number, boolean,
+  string,
+  string,
+  string,
+  keyof typeof ITEMS,
+  number,
+  number,
+  keyof typeof ITEMS | null,
+  number,
+  number,
+  number,
+  number,
+  number,
+  boolean,
 ];
 // prettier-ignore
 const WIDE: WideLine[] = [
@@ -207,17 +218,44 @@ const WIDE: WideLine[] = [
   ["18/09/2026", "D/0108", "Reliance Retail Ltd", "palm", 60, 1690, "gnut", 25, 2600, 2200, 400, 1500, true],
 ];
 const WIDE_ROWS = WIDE.map(
-  ([date, no, party, p1, q1, rate1, p2, q2, rate2, freight, packing, discount, inter]) => {
+  ([
+    date,
+    no,
+    party,
+    p1,
+    q1,
+    rate1,
+    p2,
+    q2,
+    rate2,
+    freight,
+    packing,
+    discount,
+    inter,
+  ]) => {
     const a1 = r2(q1 * rate1);
     const a2 = p2 ? r2(q2 * rate2) : 0;
     const taxable = r2(a1 + a2 + freight + packing - discount);
     const igst = inter ? r2(taxable * 0.05) : 0;
     const half = inter ? 0 : r2(taxable * 0.025);
     return [
-      date, `SOR/26-27/${no}`, party,
-      ITEMS[p1].name, q1, rate1, a1,
-      p2 ? ITEMS[p2].name : "", p2 ? q2 : "", p2 ? rate2 : "", p2 ? a2 : "",
-      freight, packing, discount, half, half, igst,
+      date,
+      `SOR/26-27/${no}`,
+      party,
+      ITEMS[p1].name,
+      q1,
+      rate1,
+      a1,
+      p2 ? ITEMS[p2].name : "",
+      p2 ? q2 : "",
+      p2 ? rate2 : "",
+      p2 ? a2 : "",
+      freight,
+      packing,
+      discount,
+      half,
+      half,
+      igst,
       r2(taxable + half + half + igst),
     ];
   }
@@ -251,13 +289,11 @@ export const sampleCsv = (mode: "item" | "accounting") => {
       : SALES_UPLOAD_HEADER.filter(
           (h) => !["Item", "HSN", "Qty", "Rate"].includes(h)
         );
-  const rows = REGISTER_ROWS
-    .slice(0, 3)
-    .map((row) =>
-      SALES_UPLOAD_HEADER.map((h, i) =>
-        header.includes(h) ? row[i] : null
-      ).filter((v) => v !== null)
-    );
+  const rows = REGISTER_ROWS.slice(0, 3).map((row) =>
+    SALES_UPLOAD_HEADER.map((h, i) =>
+      header.includes(h) ? row[i] : null
+    ).filter((v) => v !== null)
+  );
   return [header, ...rows]
     .map((r) => r.map((v) => `"${String(v)}"`).join(","))
     .join("\n");
@@ -266,8 +302,7 @@ export const sampleCsv = (mode: "item" | "accounting") => {
 /* ------------------------------------------------------------------ mapping */
 
 type Target =
-  | ARKey
-  | { collection: "items" | "ledgers"; index: number; field: ARKey };
+  ARKey | { collection: "items" | "ledgers"; index: number; field: ARKey };
 type ARKey = Extract<MappingFieldSelector, string>;
 
 const item = (index: number, field: ARKey): Target => ({
@@ -361,7 +396,10 @@ export const suggestMapping = (
   ledgers: MappingEntry[];
 } => {
   const fieldMappings: FieldMappings = {};
-  const entries = { items: [] as MappingEntry[], ledgers: [] as MappingEntry[] };
+  const entries = {
+    items: [] as MappingEntry[],
+    ledgers: [] as MappingEntry[],
+  };
   const add = (fields: FieldMappings, key: ARKey, column: string) => {
     const columns = [...(fields[key]?.sourceColumns ?? []), column];
     fields[key] = {
@@ -596,6 +634,68 @@ export type MockSalesBatch = {
  * Ids are scoped by the caller so each company has its own.
  */
 export const mockSalesBatches = (scope: string): MockSalesBatch[] => {
+  if (scope === "nandhini") {
+    return ["2026-09", "2026-10"].map((period, index) => {
+      const id = `nandhini-pos-${period}`;
+      const rows = buildPreviewRows({
+        file: {
+          header: REGISTER_TABLE.header,
+          rows: Array.from({ length: 12 }, (_, n) => {
+            const qty = 25 + n * 3,
+              rate = 240,
+              net = qty * rate;
+            return [
+              `${period}-${String(n + 1).padStart(2, "0")}`,
+              `ND/POS/${period}/${n + 1}`,
+              "Walk-in Customers",
+              "",
+              "Karnataka",
+              "Restaurant meals",
+              "996331",
+              qty,
+              rate,
+              net,
+              net * 0.025,
+              net * 0.025,
+              0,
+              net * 1.05,
+              "",
+              "",
+            ];
+          }),
+        },
+        draft: completeRegisterDraft(),
+        masters: [
+          {
+            name: "Walk-in Customers",
+            gstin: "",
+            state: "Karnataka",
+            costCentre: "JP Nagar",
+          },
+        ],
+        gstRegistration: "29AADCN5532H1ZD · Karnataka",
+        batchId: id,
+      });
+      const prepared = index === 0 ? allCreated(rows) : rows;
+      return {
+        batch: withRowCounts(
+          batch({
+            importBatchUuid: id,
+            originalFileName: `Nandhini_POS_${period}.csv`,
+            fileType: "csv",
+            status:
+              index === 0
+                ? ARVoucherImportBatchStatus.COMPLETE
+                : ARVoucherImportBatchStatus.NEEDS_REVIEW,
+            createdAt: `${period}-14T07:15:00.000Z`,
+            aiProcessedRowCount: rows.length,
+          }),
+          prepared
+        ),
+        rows: prepared,
+      };
+    });
+  }
   const complete = `${scope}-aug-register`;
   const review = `${scope}-sep-week3`;
   const failed = `${scope}-export-v2`;

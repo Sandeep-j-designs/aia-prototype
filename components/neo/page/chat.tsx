@@ -1,6 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import { ArrowRight, ChevronDown, NeoStar } from "@/components/icons";
+import {
+  BookmarkPlus,
+  CalendarClock,
+  ClipboardCheck,
+  FileSearch,
+  FileSpreadsheet,
+  Hourglass,
+  Lock,
+  Settings2,
+} from "lucide-react";
+import { ArrowRight, NeoStar } from "@/components/icons";
+import { cn } from "@/lib/utils";
 import { actor, useStore } from "@/components/inbox/v2/store";
 import { useNeo } from "@/hooks/pages/neo/use-neo";
 import { useComposer } from "@/hooks/pages/neo/use-composer";
@@ -9,14 +19,12 @@ import {
   unavailableFor,
   type TodayItem,
 } from "@/config/pages/neo/suggestions";
-import { JOBS } from "@/config/pages/neo/skills";
 import Shortcuts from "@/components/neo/common/shortcuts";
 import Canvas from "@/components/neo/common/canvas";
 import Composer from "@/components/neo/common/composer";
 import ContextChip from "@/components/neo/common/context-chip";
 import DropZone from "@/components/neo/common/drop-zone";
 import Thread, { useLiveMessage } from "@/components/neo/common/thread";
-import { cn } from "@/lib/utils";
 import { NeoMenuButton } from "./index";
 
 const NOTE =
@@ -28,17 +36,29 @@ const greeting = () => {
   return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
 };
 
-const DOT: Record<TodayItem["tone"], string> = {
-  negative: "bg-pi-danger-dot",
-  notice: "bg-pi-warning-dot",
-  neutral: "bg-pi-line-strong",
+/** The row's tile: its tone, and a glyph for where the work stands. */
+const GLYPH: Record<TodayItem["kind"], typeof Lock> = {
+  setup: Settings2,
+  "not-run": CalendarClock,
+  waiting: Hourglass,
+  review: FileSearch,
+  pending: ClipboardCheck,
+  done: FileSpreadsheet,
+  save: BookmarkPlus,
+};
+
+/** The chip's glyph colour: notice is the next thing the books need. */
+const TONE: Record<TodayItem["tone"], string> = {
+  negative: "text-pi-danger-dot",
+  notice: "text-pi-warning-dot",
+  neutral: "text-pi-faint",
 };
 
 /**
  * Neo › Chat. Empty, it is a home that leads with where three-way
  * reconciliation stands at this client — "September reconciled, not
- * closed" — each one a job Neo runs. The four jobs are one quiet link
- * below. A client without POS sales is told why there's nothing here.
+ * closed" — each one a job Neo runs. A client without POS sales is told
+ * why there's nothing here.
  * Once something is asked, the conversation runs down the middle with the
  * box pinned beneath; a document Neo makes opens beside it.
  */
@@ -50,9 +70,10 @@ const NeoChat = () => {
   const input = useRef<HTMLTextAreaElement>(null);
   const empty = !neo.messages.length;
   const first = actor.split(" ")[0];
-  const [examples, setExamples] = useState(false);
   const [hello, setHello] = useState("Hello");
-  useEffect(() => setHello(greeting()), []);
+  useEffect(() => {
+    setHello(greeting());
+  }, []);
   const company = state.companies.find((c) => c.id === state.company);
 
   useEffect(() => {
@@ -109,7 +130,6 @@ const NeoChat = () => {
       onSend={() => box.send()}
       onStop={neo.stop}
       onAttachFiles={box.attachFiles}
-      onAttachSample={box.attachSample}
       onRemoveAttachment={box.removeAttachment}
       context={
         carried ? (
@@ -135,7 +155,6 @@ const NeoChat = () => {
         disabled={!!neo.busy}
         className="flex min-h-0 min-w-0 flex-1 flex-col"
       >
-        {empty && <div aria-hidden className="neo-home-wash" />}
         {/* The title lives in the top bar's trail; below 1024px this row
             only carries the button that opens Neo's column. */}
         <header className="relative flex h-12 flex-none items-center gap-1 px-2 lg:hidden">
@@ -143,128 +162,70 @@ const NeoChat = () => {
         </header>
 
         {empty ? (
-          <div className="relative flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 pb-10 pt-[6vh] sm:px-6 sm:pt-[9vh]">
-            <div className="flex items-center gap-3">
-              <NeoStar className="h-7 w-7 flex-none text-pi-brand sm:h-8 sm:w-8" />
-              <h2 className="neo-reading text-[28px] font-normal leading-9 tracking-[-0.01em] text-pi-ink [text-wrap:balance] sm:text-[36px] sm:leading-[44px]">
+          // my-auto centres the home in the page and still lets it scroll
+          // from the top when the window is shorter than it.
+          <div className="neo-home relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-5 py-10 sm:px-10">
+            <div className="neo-home-backdrop" aria-hidden="true" />
+            <div className="relative my-auto flex w-full flex-col items-center">
+              <div className="relative">
+                <span
+                  className="neo-home-emblem neo-home-rise relative grid h-14 w-14 place-items-center rounded-[18px] text-pi-brand"
+                  aria-label="Neo"
+                >
+                  <NeoStar className="h-7 w-7" />
+                </span>
+              </div>
+              <h2 className="neo-home-rise relative mt-7 text-center text-[26px] font-medium leading-[1.15] tracking-[-0.03em] text-pi-ink [animation-delay:60ms] [text-wrap:balance] sm:text-[34px]">
                 {hello}, {first}
               </h2>
-            </div>
-            <div className="mt-8 w-full max-w-[720px]">{composer}</div>
-
-            {unavailable && (
-              <p className="mt-8 w-full max-w-[720px] rounded-xl border border-pi-line bg-background px-4 py-3 text-[13px] leading-5 text-pi-body">
-                Neo reconciles POS sales, settlements and the bank in this
-                phase, and {company?.name} doesn&apos;t sell through POS or
-                platforms. To try it, switch to Nandhini Deluxe in the top bar.
-              </p>
-            )}
-
-            {today.length > 0 && (
-              <section
-                aria-labelledby="neo-today"
-                className="mt-8 w-full max-w-[720px]"
-              >
-                <h3
-                  id="neo-today"
-                  className="mb-2 px-1 text-body-4 font-semibold text-pi-faint"
-                >
-                  Today at {company?.name}
-                </h3>
-                <ul className="overflow-hidden rounded-xl border border-pi-line bg-background shadow-pi-1">
-                  {today.map((t) => (
-                    <li
-                      key={t.id}
-                      className="border-t border-pi-line first:border-t-0"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => box.send(t.prompt)}
-                        className="group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-pi-fill focus-visible:bg-pi-fill focus-visible:outline-none"
-                      >
-                        <span
-                          aria-hidden
-                          className={cn(
-                            "mt-[7px] size-[7px] flex-none rounded-full",
-                            DOT[t.tone]
-                          )}
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-[14px] font-medium leading-5 text-pi-ink">
-                            {t.text}
-                          </span>
-                          <span className="block text-body-4 text-pi-body">
-                            {t.detail}
-                          </span>
-                        </span>
-                        <span className="mt-0.5 hidden flex-none items-center gap-1 text-[12px] font-medium text-pi-body group-hover:text-pi-ink sm:flex">
-                          Ask Neo
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            <div className="mt-5 w-full max-w-[720px]">
-              <div className="flex items-center justify-between">
-                <button
-                  type="button"
-                  aria-expanded={examples}
-                  onClick={() => setExamples((x) => !x)}
-                  className="flex items-center gap-1 rounded-sm px-1 text-[13px] font-medium text-pi-body hover:text-pi-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border"
-                >
-                  What can Neo do?
-                  <ChevronDown
-                    className={cn(
-                      "h-3.5 w-3.5 transition-transform",
-                      examples && "rotate-180"
-                    )}
-                  />
-                </button>
-                <Link
-                  href="/inbox?module=NEO&page=skills"
-                  className="flex items-center gap-1 rounded-sm px-1 text-[13px] font-medium text-pi-body hover:text-pi-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border"
-                >
-                  How Neo works
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
+              <div className="neo-home-prompt neo-home-rise relative mt-8 w-full max-w-[680px] [animation-delay:120ms]">
+                {composer}
               </div>
-              {examples && (
-                <div className="mt-3 rounded-xl border border-pi-line bg-background px-4 py-2.5 shadow-pi-1 duration-200 animate-in fade-in-0 slide-in-from-top-1">
-                  <ul>
-                    {JOBS.map((j) => (
-                      <li key={j.id}>
-                        <button
-                          type="button"
-                          onClick={() => box.send(j.prompt)}
-                          className="flex w-full items-baseline gap-3 rounded-sm py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border"
-                        >
-                          <span className="code w-16 flex-none text-[12px] text-pi-faint">
-                            /{j.slash}
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block text-[13px] font-medium leading-5 text-pi-ink hover:underline">
-                              {j.name}
-                            </span>
-                            <span className="block text-body-4 text-pi-body">
-                              {j.does}
-                            </span>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
+
+              {unavailable && (
+                <p className="relative mt-6 w-full max-w-[640px] text-center text-[13px] leading-5 text-pi-body">
+                  Neo reconciles POS sales, settlements and the bank in this
+                  phase, and {company?.name} doesn&apos;t sell through POS or
+                  platforms. To try it, switch to Nandhini Deluxe in the top
+                  bar.
+                </p>
+              )}
+
+              {today.length > 0 && (
+                <section
+                  aria-labelledby="neo-today"
+                  className="neo-home-rise relative mt-8 flex w-full max-w-[680px] flex-col items-center [animation-delay:180ms]"
+                >
+                  <h3
+                    id="neo-today"
+                    className="text-[12px] font-medium text-pi-faint"
+                  >
+                    Up next at {company?.name}
+                  </h3>
+                  <ul className="mt-3 flex flex-wrap justify-center gap-2">
+                    {today.map((t) => {
+                      const Glyph = GLYPH[t.kind];
+                      return (
+                        <li key={t.id}>
+                          <button
+                            type="button"
+                            onClick={() => box.send(t.prompt)}
+                            title={`${t.text}. ${t.detail}`}
+                            className="neo-home-chip group flex h-9 items-center gap-2 rounded-full border border-pi-line-2 bg-background pl-3 pr-3.5 text-[13px] font-medium text-pi-ink-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border"
+                          >
+                            <Glyph
+                              aria-hidden
+                              className={cn("h-4 w-4 flex-none", TONE[t.tone])}
+                            />
+                            {t.prompt}
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
-                </div>
+                </section>
               )}
             </div>
-            {!neo.signedOff && (
-              <p className="mt-8 text-center text-body-4 text-pi-faint">
-                {NOTE}
-              </p>
-            )}
           </div>
         ) : (
           <>

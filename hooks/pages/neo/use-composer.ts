@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { RECON_SAMPLE_FILES } from "@/config/pages/neo/mock-recon";
+import { keepFile } from "@/utils/pages/neo/attachment-files";
+import { UPLOAD_STANDINS } from "@/config/pages/neo/mock-recon-sources";
 import type { NeoAttachment } from "@/types/pages/neo";
 import type { NeoRuntime } from "./use-neo-runtime";
 
@@ -59,14 +60,26 @@ export const useComposer = (neo: NeoRuntime) => {
     setDraft,
     attachments,
     send,
-    attachFiles: (files: FileList) =>
-      attach(
-        Array.from(files).map((f) => ({
-          name: f.name,
-        }))
-      ),
-    attachSample: () =>
-      attach(RECON_SAMPLE_FILES.map((f) => ({ name: f.name }))),
+    // An upload starts the three-way reconciliation at once (21 Oct 2026),
+    // with whatever was typed. While Neo works, files wait in the box.
+    attachFiles: (files: FileList) => {
+      // An edited Neo report goes as itself; anything else shows as the
+      // six sample sources, so the run reads what the demo has.
+      const picked = Array.from(files);
+      picked.forEach(keepFile);
+      const reports = picked.filter((f) => /^recon-.*\.xlsx$/i.test(f.name));
+      const list = reports.length
+        ? reports.map((f) => ({ name: f.name }))
+        : UPLOAD_STANDINS.map((f) => ({ name: f.name }));
+      if (neo.busy || neo.textAsk) return attach(list);
+      const all = [
+        ...attachments,
+        ...list.filter((a) => !attachments.some((x) => x.name === a.name)),
+      ];
+      setDraft("");
+      setAttachments([]);
+      void neo.startRun(draft, all);
+    },
     removeAttachment: (name: string) =>
       setAttachments((as) => as.filter((a) => a.name !== name)),
   };

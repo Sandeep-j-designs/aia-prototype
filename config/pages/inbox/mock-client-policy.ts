@@ -22,8 +22,26 @@ export const FIRM_POLICY: Omit<PolicyRule, "company">[] = [
     active: true,
   },
 ];
-export const MOCK_CLIENT_POLICY: PolicyRule[] = FIRM_POLICY.map((x) => ({
-  ...x,
-  id: `shakun-${x.id}`,
-  company: "shakun",
-}));
+export const MOCK_CLIENT_POLICY: PolicyRule[] = [
+  ...FIRM_POLICY.map((x) => ({
+    ...x,
+    id: `shakun-${x.id}`,
+    company: "shakun",
+  })),
+  {
+    id: "nd-ingredients",
+    company: "nandhini",
+    text: "Rice, pulses, vegetables and dairy supplies go to Purchase – Ingredients.",
+    condition: { description: "rice|pulses|vegetables|milk|curd" },
+    action: { ledger: "Purchase – Ingredients" },
+    active: true,
+  },
+  {
+    id: "nd-gas",
+    company: "nandhini",
+    text: "Commercial LPG refills go to Gas & Fuel.",
+    condition: { description: "LPG|cylinder" },
+    action: { ledger: "Gas & Fuel" },
+    active: true,
+  },
+];

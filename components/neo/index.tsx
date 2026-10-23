@@ -28,12 +28,6 @@ import DropZone from "./common/drop-zone";
 import NeoMark from "./common/neo-mark";
 import Thread, { useLiveMessage } from "./common/thread";
 import ChatTitle from "./page/chat-title";
-import {
-  BackToBill,
-  BillChecks,
-  SubtaskTitle,
-  useSubtask,
-} from "./bill-subtask";
 import { demoNote } from "@/config/pages/neo/demo";
 
 const ICON_BUTTON =
@@ -43,7 +37,7 @@ const ICON_BUTTON =
  * Neo, docked: the same chat as Neo's page, made small and set beside the
  * work (19 Oct 2026, "one Neo, two sizes"). It is for asking about what is
  * on screen, and its empty state offers the next reconciliation job; the
- * greeting, the skills and past chats live on Neo's page.
+ * greeting, the agents and past chats live on Neo's page.
  * Expand opens the page on this chat, carrying its "this".
  *
  * Its left edge drags it wider (384–560px). A document Neo makes opens to
@@ -61,7 +55,6 @@ const NeoPanel = () => {
   const state = useStore();
   const box = useComposer(neo);
   const live = useLiveMessage(neo);
-  const subtask = useSubtask();
   const input = useRef<HTMLTextAreaElement>(null);
 
   const suggestions = useMemo(
@@ -188,11 +181,9 @@ const NeoPanel = () => {
         <header className="flex h-14 flex-none items-center gap-1 border-b border-pi-line pl-3 pr-2">
           <NeoMark className="mr-1" live={!!neo.busy && !neo.paused} />
           <div className="flex min-w-0 flex-1 items-center">
-            {neo.billFocus ? <SubtaskTitle /> : <ChatTitle compact />}
+            <ChatTitle compact />
           </div>
-          {/* On a bill's subtask these are the chat's tools; the
-              breadcrumb needs the room. */}
-          {!neo.billFocus && (
+          {
             <>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -232,7 +223,7 @@ const NeoPanel = () => {
                 <SquarePen className="h-4 w-4" />
               </button>
             </>
-          )}
+          }
           <button
             type="button"
             aria-label="Expand to Neo"
@@ -253,8 +244,6 @@ const NeoPanel = () => {
           </button>
         </header>
 
-        {subtask && !neo.billFocus && <BackToBill />}
-
         <DropZone
           onFiles={box.attachFiles}
           disabled={!!neo.busy}
@@ -264,20 +253,14 @@ const NeoPanel = () => {
             <Thread
               variant="panel"
               onPrompt={(t) => box.send(t)}
-              scope={neo.billFocus}
-              header={neo.billFocus ? <BillChecks /> : undefined}
               onOpenScope={(id) =>
-                id === subtask?.item.id
-                  ? neo.setDockView("bill")
-                  : subtask
-                    ? subtask.open(id)
-                    : neo.goTo({ label: "", itemId: id, target: "open" })
+                neo.goTo({ label: "", itemId: id, target: "open" })
               }
             />
           ) : (
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
               <p className="neo-reading text-[22px] leading-8 text-pi-ink">
-                What would you like to know about this screen?
+                What should Neo reconcile?
               </p>
               <ul className="mt-5 flex flex-col">
                 {suggestions.map((s, i) => (
@@ -303,7 +286,7 @@ const NeoPanel = () => {
                 }
                 className="mt-5 inline-flex items-center gap-1 rounded-sm text-[13px] font-medium text-pi-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border"
               >
-                Open Neo for its skills and past chats
+                Open Neo for its agents and past chats
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -318,13 +301,8 @@ const NeoPanel = () => {
             onSend={() => box.send()}
             onStop={neo.stop}
             onAttachFiles={box.attachFiles}
-            onAttachSample={box.attachSample}
             onRemoveAttachment={box.removeAttachment}
-            placeholder={
-              neo.billFocus && subtask
-                ? `Ask about ${subtask.billNo}`
-                : `Ask about ${company || "this company"}`
-            }
+            placeholder={`Ask about ${company || "this company"}`}
             context={
               <ContextChip
                 variant="pill"

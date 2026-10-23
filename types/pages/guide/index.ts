@@ -40,7 +40,7 @@ export type TourStep = {
 };
 
 export type JourneyId =
-  "purchases" | "banking" | "sales" | "sales-upload" | "inbox";
+  "recon" | "purchases" | "banking" | "sales" | "sales-upload" | "inbox";
 
 /** Which skeleton the journey card draws in its thumbnail. */
 export type JourneyArt = "list" | "ledger" | "form" | "upload" | "inbox";

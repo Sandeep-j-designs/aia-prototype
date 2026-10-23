@@ -6,22 +6,19 @@ import React, {
   useRef,
   useState,
 } from "react";
-import {
-  ArrowUp,
-  FileStack,
-  FileText,
-  Plus,
-  Slash,
-  Square,
-  Upload,
-  X,
-} from "@/components/icons";
+import { Paperclip } from "lucide-react";
+import { ArrowUp, FileText, Plus, Slash, Square, X } from "@/components/icons";
 import { useNeo } from "@/hooks/pages/neo/use-neo";
 import { NEO_COMMANDS } from "@/config/pages/neo/suggestions";
-import type { NeoAttachment, NeoDecisionItem } from "@/types/pages/neo";
+import type {
+  NeoAttachment,
+  NeoDecisionItem,
+  NeoMessage,
+} from "@/types/pages/neo";
 import { cn } from "@/lib/utils";
 import { EDIT_LAST_EVENT, useLiveMessage } from "./thread";
 import { QuestionsInBox } from "./message";
+import { RECON_JOURNEY } from "@/config/pages/neo/skills";
 
 type Props = {
   value: string;
@@ -31,7 +28,6 @@ type Props = {
   onSend: () => void;
   onStop: () => void;
   onAttachFiles: (files: FileList) => void;
-  onAttachSample: () => void;
   onRemoveAttachment: (name: string) => void;
   /** "page" is the wider box on Neo's page; "panel" the docked one. */
   variant?: "panel" | "page";
@@ -45,15 +41,17 @@ type Props = {
 type Pick = { id: string; label: string; hint?: string; insert: string };
 
 /**
- * Where you ask (19 Oct 2026, the chat apps' prompt box): the text on top,
- * growing as you write; a toolbar underneath with + for reports, what Neo
- * is looking at, and send — which becomes stop while Neo works.
+ * Where you ask (21 Oct 2026, one line as in ChatGPT): the paperclip, the
+ * text, and send — which becomes stop while Neo works. The text grows into
+ * more lines as you write; the buttons stay on its last line. What Neo is
+ * looking at sits above the line when there is something.
  *
  * / at the start offers Neo's jobs. ↑ in an empty box edits your last
  * request. Enter sends, Shift+Enter breaks the line.
  *
- * Reports go in here too: + attaches files (or the prototype's sample
- * reports), they sit as tiles above the text, and they go with the message.
+ * The paperclip opens the system's file dialog. Choosing files starts the
+ * three-way reconciliation straight away (use-composer); while Neo is
+ * working they wait here as tiles and go with the next message.
  */
 const Composer = forwardRef<HTMLTextAreaElement, Props>(
   (
@@ -65,7 +63,6 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
       onSend,
       onStop,
       onAttachFiles,
-      onAttachSample,
       onRemoveAttachment,
       variant = "panel",
       placeholder,
@@ -81,23 +78,12 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
     // Neo is waiting on the person, not working: a question or a sign-off.
     const answering = !!neo.textAsk;
     const signOff = live?.actions?.find((a) => a.primary);
-    const [menu, setMenu] = useState(false);
     const [caret, setCaret] = useState(0);
     const [active, setActive] = useState(0);
     const [dismissed, setDismissed] = useState<string | null>(null);
     const file = useRef<HTMLInputElement>(null);
-    const menuRef = useRef<HTMLDivElement>(null);
     const field = useRef<HTMLTextAreaElement>(null);
     useImperativeHandle(ref, () => field.current as HTMLTextAreaElement);
-
-    useEffect(() => {
-      if (!menu) return;
-      const close = (e: MouseEvent) => {
-        if (!menuRef.current?.contains(e.target as Node)) setMenu(false);
-      };
-      window.addEventListener("mousedown", close);
-      return () => window.removeEventListener("mousedown", close);
-    }, [menu]);
 
     // What the caret is in the middle of: "/re" at the start.
     const before = value.slice(0, caret);
@@ -142,8 +128,15 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
     // joined to it, and the box stays. Typing there answers the open
     // question in your own words, as "Something else".
     const asking = live?.card?.kind === "decisions" ? live : undefined;
+    // The journey step the run is on: its latest reasoning block's.
+    const stageOf = (m: NeoMessage) => {
+      const n = [...neo.messages]
+        .reverse()
+        .find((x) => x.runId === m.runId && x.phase)?.phase;
+      return n ? { n, of: RECON_JOURNEY.length } : undefined;
+    };
     const sendTyped = () => {
-      if (!asking || !value.trim() || !openQ?.other) return;
+      if (!asking || !value.trim() || !openQ) return;
       setTyped((t) => ({ text: value.trim(), n: (t?.n || 0) + 1 }));
       onChange("");
     };
@@ -151,14 +144,15 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
     return (
       <div className={cn("flex-none", !page && "bg-background px-4 pb-3 pt-2")}>
         {asking && (
+          // Structured questions replace the chat field until resolved.
           <div
+            key={asking.id}
             className={cn(
-              "max-h-[60vh] overflow-y-auto rounded-t-2xl border border-b-0 border-pi-line bg-background duration-200 animate-in fade-in-0 slide-in-from-bottom-3 motion-reduce:animate-none",
-              "[&>section]:rounded-none [&>section]:border-0 [&>section]:shadow-none",
-              page ? "mx-3 shadow-pi-2" : "mx-2 shadow-pi-1"
+              "neo-sheet-rise relative z-0 mb-3 max-h-[64vh] overflow-y-auto rounded-[24px] border border-pi-line bg-pi-brand-tint/40"
             )}
           >
             <QuestionsInBox
+              stage={stageOf(asking)}
               m={asking}
               onAnswer={(v) => neo.answer(asking.id, v)}
               onEditCard={(card) => neo.editCard(asking.id, card)}
@@ -168,11 +162,17 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
           </div>
         )}
         <div
+          hidden={!!asking}
+          data-guide-id="neo-composer"
           className={cn(
-            "relative rounded-2xl border bg-background transition-[border-color,box-shadow] focus-within:border-pi-line-2",
-            page
-              ? "border-pi-line shadow-pi-2 focus-within:shadow-pi-2"
-              : "border-pi-line shadow-pi-1"
+            "relative z-10 border transition-[border-color,box-shadow,background-color] duration-200",
+            asking
+              ? "rounded-2xl border-pi-line-2 bg-background focus-within:border-pi-brand-border focus-within:ring-2 focus-within:ring-pi-brand-tint"
+              : "rounded-[26px] bg-background focus-within:border-pi-line-2",
+            !asking &&
+              (page
+                ? "border-pi-line shadow-pi-2 focus-within:shadow-pi-2"
+                : "border-pi-line shadow-pi-1")
           )}
         >
           {open && (
@@ -252,153 +252,49 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
             </ul>
           )}
 
+          {context && (
+            <div className="flex min-w-0 items-center gap-1.5 px-3 pt-2.5">
+              {context}
+            </div>
+          )}
           <label htmlFor="neo-composer" className="sr-only">
             Ask Neo
           </label>
-          <textarea
-            id="neo-composer"
-            ref={field}
-            rows={1}
-            value={value}
-            onChange={(e) => {
-              onChange(e.target.value);
-              setCaret(e.target.selectionStart);
-              setDismissed(null);
-            }}
-            onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-            onKeyDown={(e) => {
-              if (e.nativeEvent.isComposing) return;
-              if (open) {
-                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                  e.preventDefault();
-                  const d = e.key === "ArrowDown" ? 1 : -1;
-                  setActive((i) => (i + d + picks.length) % picks.length);
-                  return;
-                }
-                if (e.key === "Enter" || e.key === "Tab") {
-                  e.preventDefault();
-                  choose(picks[active]);
-                  return;
-                }
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setDismissed(trigger);
-                  return;
-                }
-              }
-              if (e.key === "ArrowUp" && !value && !attachments.length) {
-                e.preventDefault();
-                window.dispatchEvent(new Event(EDIT_LAST_EVENT));
-                return;
-              }
-              if (
-                e.key === "Enter" &&
-                !e.shiftKey &&
-                !e.ctrlKey &&
-                !e.metaKey
-              ) {
-                e.preventDefault();
-                if (asking) sendTyped();
-                else onSend();
-              }
-            }}
-            placeholder={
-              asking
-                ? openQ?.other
-                  ? "Pick an answer above, or type your own · Enter sends it"
-                  : openQ
-                    ? `Pick an answer above (1–${Math.min(9, openQ.options.length)})`
-                    : "Check the answers above, then submit · Esc cancels"
-                : answering
-                  ? `${live?.ask?.input?.placeholder || "Type your answer"} · Enter answers`
-                  : busy && live?.ask
-                    ? `Pick an answer above (1–${Math.min(9, live.ask.options.length)}) · Esc stops`
-                    : busy && signOff
-                      ? signOff.risk === "commit" || signOff.risk === "external"
-                        ? "Waiting for your sign-off · Esc cancels"
-                        : "Waiting for your sign-off · Ctrl ↵ applies · Esc cancels"
-                      : busy
-                        ? "Neo is working · Esc stops it"
-                        : placeholderText
-                          ? placeholderText
-                          : attachments.length
-                            ? "What should Neo know about these?"
-                            : placeholder || "Ask Neo, or type / for a job"
-            }
+          <div
             className={cn(
-              "block w-full resize-none bg-transparent px-4 text-pi-ink placeholder:text-pi-faint focus-visible:outline-none [field-sizing:content]",
-              page
-                ? "max-h-52 min-h-[52px] pb-1 pt-4 text-[16px] leading-7"
-                : "max-h-44 min-h-[44px] pb-1 pt-3 text-[14px] leading-6"
+              "flex items-end gap-1",
+              page ? "px-2.5 py-2" : "px-2 py-1.5"
             )}
-          />
-
-          <div className="flex items-center gap-1.5 px-2 pb-2 pt-1">
-            <div ref={menuRef} className="relative flex-none">
+          >
+            <div className="flex-none">
               <button
                 type="button"
-                aria-label="Add bills"
-                title="Add bills"
-                aria-haspopup="menu"
-                aria-expanded={menu}
-                disabled={busy}
-                onClick={() => setMenu((m) => !m)}
-                className="grid h-8 w-8 place-items-center rounded-full border border-pi-line text-pi-body transition-colors hover:bg-pi-fill hover:text-pi-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border disabled:opacity-40 aria-expanded:bg-pi-fill"
+                aria-label="Attach files"
+                data-guide-id="neo-attach-button"
+                title="Attach files"
+                disabled={
+                  (busy && !!live?.ask) || (!!asking && !openQ)
+                }
+                onClick={() => file.current?.click()}
+                className={cn(
+                  "grid place-items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border disabled:opacity-40",
+                  asking
+                    ? "text-pi-body hover:bg-pi-fill hover:text-pi-ink"
+                    : "text-pi-body hover:bg-pi-fill hover:text-pi-ink",
+                  page ? "h-10 w-10" : "h-9 w-9"
+                )}
               >
-                <Plus className="h-4 w-4" />
+                {asking ? (
+                  <Plus className="h-5 w-5" />
+                ) : (
+                  <Paperclip className="h-[18px] w-[18px]" />
+                )}
               </button>
-              {menu && (
-                <div
-                  role="menu"
-                  className="absolute bottom-10 left-0 z-20 w-72 overflow-hidden rounded-lg border border-pi-line bg-background p-1 shadow-popover-shadow duration-150 animate-in fade-in-0 slide-in-from-bottom-1"
-                >
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenu(false);
-                      file.current?.click();
-                    }}
-                    className="flex w-full items-start gap-2.5 rounded-sm px-2.5 py-2 text-left hover:bg-pi-fill focus-visible:bg-pi-fill focus-visible:outline-none"
-                  >
-                    <Upload className="mt-0.5 h-4 w-4 flex-none text-pi-body" />
-                    <span>
-                      <span className="block text-[13px] text-pi-ink">
-                        Upload reports
-                      </span>
-                      <span className="block text-body-4 text-pi-body">
-                        POS, settlement and bank statements. Or drop them here
-                      </span>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenu(false);
-                      onAttachSample();
-                    }}
-                    className="flex w-full items-start gap-2.5 rounded-sm px-2.5 py-2 text-left hover:bg-pi-fill focus-visible:bg-pi-fill focus-visible:outline-none"
-                  >
-                    <FileStack className="mt-0.5 h-4 w-4 flex-none text-pi-body" />
-                    <span>
-                      <span className="block text-[13px] text-pi-ink">
-                        Sample: Nandhini's September reports
-                      </span>
-                      <span className="block text-body-4 text-pi-body">
-                        POS, card, UPI, Zomato, Swiggy and the statement
-                      </span>
-                    </span>
-                  </button>
-                </div>
-              )}
               <input
                 ref={file}
                 id="neo-attach"
                 type="file"
                 multiple
-                accept=".pdf,.csv,.xls,.xlsx"
                 className="sr-only"
                 tabIndex={-1}
                 onChange={(e) => {
@@ -407,27 +303,117 @@ const Composer = forwardRef<HTMLTextAreaElement, Props>(
                 }}
               />
             </div>
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              {context}
-            </div>
-            {busy && !answering && !(asking && value.trim()) ? (
+            <textarea
+              id="neo-composer"
+              ref={field}
+              rows={1}
+              disabled={!!asking && !openQ}
+              value={value}
+              onChange={(e) => {
+                onChange(e.target.value);
+                setCaret(e.target.selectionStart);
+                setDismissed(null);
+              }}
+              onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+              onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing) return;
+                if (open) {
+                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    const d = e.key === "ArrowDown" ? 1 : -1;
+                    setActive((i) => (i + d + picks.length) % picks.length);
+                    return;
+                  }
+                  if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    choose(picks[active]);
+                    return;
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDismissed(trigger);
+                    return;
+                  }
+                }
+                if (e.key === "ArrowUp" && !value && !attachments.length) {
+                  e.preventDefault();
+                  window.dispatchEvent(new Event(EDIT_LAST_EVENT));
+                  return;
+                }
+                if (
+                  e.key === "Enter" &&
+                  !e.shiftKey &&
+                  !e.ctrlKey &&
+                  !e.metaKey
+                ) {
+                  e.preventDefault();
+                  if (asking) sendTyped();
+                  else onSend();
+                }
+              }}
+              placeholder={
+                asking
+                  ? openQ
+                    ? "Or reply directly…"
+                    : "Review your answers above to continue"
+                  : answering
+                    ? `${live?.ask?.input?.placeholder || "Type your answer"} · Enter answers`
+                    : busy && live?.card?.kind === "guide-choice"
+                      ? "Pick how to start in the guide · Esc stops"
+                      : busy && live?.ask
+                      ? `Pick an answer above (1–${Math.min(9, live.ask.options.length)}) · Esc stops`
+                      : busy && signOff
+                        ? signOff.risk === "commit" ||
+                          signOff.risk === "external"
+                          ? "Waiting for your sign-off · Esc cancels"
+                          : "Waiting for your sign-off · Ctrl ↵ applies · Esc cancels"
+                        : busy
+                          ? "Neo is working · Esc stops it"
+                          : placeholderText
+                            ? placeholderText
+                            : attachments.length
+                              ? "What should Neo know about these?"
+                              : placeholder || "Ask Neo, or type / for a job"
+              }
+              className={cn(
+                "block min-w-0 flex-1 resize-none bg-transparent px-2 text-pi-ink focus-visible:outline-none [field-sizing:content]",
+                asking
+                  ? "placeholder:text-pi-faint disabled:opacity-75"
+                  : "placeholder:text-pi-faint",
+                page
+                  ? "max-h-52 min-h-[40px] py-2 text-[16px] leading-6 sm:text-[14.5px]"
+                  : "max-h-44 min-h-[36px] py-1.5 text-[16px] leading-6 sm:text-[13.5px]"
+              )}
+            />
+
+            {busy && !asking && !answering ? (
               <button
                 type="button"
                 aria-label={signOff || live?.ask ? "Cancel" : "Stop"}
                 title={signOff || live?.ask ? "Cancel (Esc)" : "Stop (Esc)"}
                 onClick={onStop}
-                className="grid h-8 w-8 flex-none place-items-center rounded-full bg-pi-ink text-background transition-transform duration-150 animate-in zoom-in-75 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border"
+                className={cn(
+                  "mb-0.5 mr-0.5 grid h-9 w-9 flex-none place-items-center rounded-full transition-[color,background-color,transform] duration-150 animate-in zoom-in-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border",
+                  asking || live?.ask
+                    ? "bg-background/80 text-pi-body shadow-contact ring-1 ring-inset ring-pi-line-2 hover:bg-pi-fill hover:text-pi-ink"
+                    : "bg-pi-ink text-background hover:opacity-90"
+                )}
               >
-                <Square className="h-3 w-3 fill-current" />
+                {asking || live?.ask ? (
+                  <X className="h-4 w-4" />
+                ) : (
+                  <Square className="h-3 w-3 fill-current" />
+                )}
               </button>
             ) : (
               <button
                 type="button"
                 aria-label="Send"
                 title="Send (Enter)"
-                disabled={asking ? !openQ?.other : !canSend}
+                disabled={asking ? !openQ || !value.trim() : !canSend}
                 onClick={asking ? sendTyped : onSend}
-                className="grid h-8 w-8 flex-none place-items-center rounded-full bg-primary text-primary-foreground transition-[opacity,transform] duration-150 animate-in zoom-in-75 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border disabled:bg-pi-fill disabled:text-pi-faint"
+                className="mb-0.5 mr-0.5 grid h-9 w-9 flex-none place-items-center rounded-full bg-primary text-primary-foreground transition-[opacity,transform] duration-150 animate-in zoom-in-75 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border disabled:bg-pi-fill disabled:text-pi-faint"
               >
                 <ArrowUp className="h-4 w-4" />
               </button>

@@ -10,7 +10,7 @@ type Props = {
 };
 
 /**
- * Bills dropped anywhere on the chat attach to the next message. While files
+ * Files dropped anywhere on the chat attach to the next message. While files
  * are dragged over it the whole chat says so.
  */
 const DropZone = ({ onFiles, disabled, className, children }: Props) => {
@@ -52,9 +52,12 @@ const DropZone = ({ onFiles, disabled, className, children }: Props) => {
               <Upload className="h-5 w-5" />
             </span>
             <p className="text-[15px] font-semibold text-pi-ink">
-              Drop bills to attach
+              Drop files to reconcile
             </p>
-            <p className="text-body-4 text-pi-body">PDF, JPG or PNG</p>
+            <p className="text-body-4 text-pi-body">
+              Bank, settlement and books exports start a three-way
+              reconciliation
+            </p>
           </div>
         </div>
       )}

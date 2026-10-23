@@ -1,143 +1,166 @@
 import { companyOf, getState } from "@/components/inbox/v2/store";
 import { NANDHINI_ID } from "@/config/pages/neo/mock-recon";
 import {
-  answerPolicy,
-  approvePolicy,
-  draftPolicy,
+  TEMPLATE,
+  configOf,
+  confirmConfig,
+  latestUnsavedAnswer,
+  saveAnswerToConfig,
 } from "@/hooks/pages/neo/use-recon";
 import { decide } from "./shared";
 import type { NeoTask } from "@/types/pages/neo";
 import { has } from "@/utils/pages/neo";
 
 /**
- * Set up three-way reconciliation (20 Oct 2026). The brief's rule: read the
- * books before asking anything. Neo drafts the company's policy from three
- * months of vouchers (LRN-01), shows what it found with the evidence, asks
- * only what the books can't settle, refuses to copy a pattern that breaks a
- * hard rule, and the accountant approves the policy as version 1.
+ * US-01 · Set up a reconciliation (FR-01, aligned to the AiA 2.0 PRD on
+ * 21 Oct 2026). A template with the company, timezone, currency and the
+ * checklist of three sources, confirmed as the company's configuration.
+ * A later period reuses it: the configuration is copied, never the rows or
+ * results of an earlier run (US-01 AC3).
  *
- * DEV: GET /api/recon/policy/draft?company=… runs skill S3 over the synced
- * vouchers; POST /api/recon/policy approves it.
+ * Also the one way an answer becomes reusable: "Save the answer to the
+ * configuration" is a separate, authorised confirmation (US-05 AC4).
+ *
+ * DEV: POST /api/recon/configs; POST /api/recon/configs/:id/mappings.
  */
 const reconSetup: NeoTask = {
   id: "recon-setup",
   title: "Set up reconciliation",
   match: (p) =>
-    has(p, /\b(set ?up|configure|onboard)\b/i) &&
-    has(p, /\b(recon|reconcil\w*)\b/i)
-      ? 60
-      : 0,
+    has(p, /\bsave\b/i) && has(p, /\bconfig/i)
+      ? 70
+      : has(p, /\b(set ?up|configure|template)\b/i) &&
+          has(p, /\b(recon|reconcil\w*)\b/i)
+        ? 60
+        : 0,
   run: async (api) => {
     const company = api.context.company || getState().company;
     if (company !== NANDHINI_ID) {
       await api.say(
-        `Reconciliation reads POS, payment-gateway and platform reports, and ${companyOf(company)?.name} doesn't sell through any. In this prototype it's set up for **Nandhini Deluxe**, a restaurant; switch to it in the top bar.`
+        `In this prototype, three-way reconciliation is set up for **Nandhini Deluxe**, which has bank, settlement and books data. ${companyOf(company)?.name} doesn't; switch in the top bar.`
       );
-      return "Not a POS client";
+      return "No settlement data for this client";
     }
 
-    const reading = await api.step(
-      "Reading Jun–Aug vouchers in your Tally",
-      undefined,
-      { skills: ["S3"], tools: ["books.vouchers"] }
-    );
-    await api.wait(900);
-    const policy = draftPolicy(company);
-    const counts = policy.rows.reduce<Record<string, number>>(
-      (m, r) => ({ ...m, [r.state]: (m[r.state] || 0) + 1 }),
-      {}
-    );
-    // The policy is the document; the step says how it was drafted.
-    reading(
-      `Drafted the policy from 1,284 vouchers · ${counts.prefilled || 0} from your books, ${counts.assumed || 0} from the restaurant template`
-    );
-    api.status("Setting up reconciliation", { done: 1, total: 3 });
-    api.show({ kind: "recon", company, view: "policy" });
+    // US-05 AC4: saving an answer is its own confirmation.
+    if (has(api.prompt, /\bsave\b/i)) {
+      const cfg = configOf(company);
+      const latest = latestUnsavedAnswer(company);
+      if (!latest) {
+        await api.say(
+          "There's no answered question to save yet. Answers apply to the run they were given in until you save one here."
+        );
+        return "Nothing to save";
+      }
+      const { run: r, q } = latest;
+      const opt = q.options.find((o) => o.id === q.answer);
+      const { choice } = await decide(
+        api,
+        "Save to the configuration",
+        [
+          {
+            id: "what",
+            header: "Answer",
+            question: `Save this answer for runs after ${r.period.label}?`,
+            why: "Saved answers apply from the next run. Only someone who can edit this company's configuration can save one.",
+            recommended: q.answer!,
+            options: [
+              {
+                id: q.answer!,
+                label: opt?.label || q.answer!,
+                hint: opt?.hint,
+              },
+            ],
+            settled: `Answered in ${r.period.label}: ${q.text}`,
+          },
+        ],
+        [
+          {
+            id: "save",
+            label: `Save to configuration v${(cfg?.version || 0) + 1}`,
+            primary: true,
+            risk: "draft",
+          },
+          { id: "cancel", label: "Not now" },
+        ]
+      );
+      if (choice !== "save") return "Not saved";
+      const next = saveAnswerToConfig(r.id, q.id)!;
+      await api.say(
+        `Saved to **configuration v${next.version}**: ${opt?.hint || opt?.label}. It applies from the next run; ${r.period.label} keeps the answer it was given.`
+      );
+      return "Saved to configuration";
+    }
 
-    // The three gaps and the approval, on one sheet (20 Oct 2026). Two are
-    // settled by history; only the gross cut-off is a real choice.
+    const prior = configOf(company);
+    api.stage(1);
+    const step = await api.step(
+      prior
+        ? `Reading configuration v${prior.version}`
+        : `Opening the ${TEMPLATE.name} template`,
+      undefined,
+      { tools: ["config.get"] }
+    );
+    await api.wait(500);
+    step(
+      prior
+        ? `Configuration v${prior.version}: ${TEMPLATE.name}, ${prior.timezone}, ${prior.currency}`
+        : `${TEMPLATE.name}: three sources, one currency, one timezone`
+    );
+    api.stage(2);
     await api.checkpoint();
     const { choice, picks } = await decide(
       api,
-      "Before I approve the policy",
+      prior ? "Confirm the configuration" : "Set up the configuration",
       [
         {
-          id: "cut",
-          header: "Gross from",
-          question: "From when are Zomato and Swiggy booked at gross?",
-          why: "Your history books them at the payout, which hides commission, ads and the 194-O TDS credit, so I won't copy it. Past months stay as they are.",
-          recommended: "sep",
+          id: "tz",
+          header: "Timezone",
+          question: "Which timezone sets the period's boundaries?",
+          why: "A row on the last day belongs to the period by this clock (R1).",
+          recommended: "Asia/Kolkata",
           options: [
             {
-              id: "sep",
-              label: "From 1 Sep 2026",
-              hint: "The month we're about to reconcile",
+              id: "Asia/Kolkata",
+              label: "India (IST, UTC+5:30)",
+              hint: "Nandhini Deluxe's company timezone",
             },
-            { id: "oct", label: "From 1 Oct 2026" },
           ],
+          settled: "Nandhini Deluxe's company timezone in AiA 1.0",
         },
         {
-          id: "alloc",
-          header: "Allocation",
-          question: "How are platform receivables closed?",
-          settled: "28 of 40 payouts in history",
-          recommended: "date",
-          options: [
-            { id: "date", label: "By sales date" },
-            { id: "oldest", label: "Oldest first" },
-          ],
-        },
-        {
-          id: "own",
-          header: "ICICI ·4105",
-          question: "Is ICICI Current A/c ·4105 the company's own account?",
-          why: "Only an account the company owns can take a contra.",
-          settled: "six transfers in history booked as contras",
-          recommended: "yes",
-          options: [
-            { id: "yes", label: "ICICI ·4105 is our own account" },
-            { id: "no", label: "No, it belongs to someone else" },
-          ],
+          id: "cur",
+          header: "Currency",
+          question: "Which currency does the run reconcile in?",
+          why: "One currency per run (A3). A row in another currency stops the run until it's corrected.",
+          recommended: "INR",
+          options: [{ id: "INR", label: "Indian rupee (INR)" }],
+          settled: "Every source for this company is in INR",
         },
       ],
       [
         {
-          id: "approve",
-          label: "Submit and approve policy v1",
+          id: "confirm",
+          label: prior
+            ? `Confirm configuration v${prior.version + 1}`
+            : "Confirm configuration v1",
           primary: true,
-          risk: "read",
+          risk: "draft",
         },
-        { id: "later", label: "Not now" },
+        { id: "cancel", label: "Not now" },
       ]
     );
-    const { cut, alloc, own } = picks;
-    answerPolicy(
-      company,
-      "sales.basis.platform",
-      `Zomato, Swiggy and Ownly sales at gross from ${cut === "sep" ? "1 Sep" : "1 Oct"} 2026; fees, ads, GST on fees and TDS 194-O to their own ledgers`
+    if (choice !== "confirm") return "Not confirmed";
+    const cfg = confirmConfig(company, {
+      timezone: picks.tz,
+      currency: picks.cur,
+    });
+    api.show({ kind: "recon", company, view: "config" });
+    await api.say(
+      `**Configuration v${cfg.version} confirmed** for Nandhini Deluxe: ${TEMPLATE.name}, ${cfg.timezone}, ${cfg.currency}. Each run needs a bank statement, the settlement reports and the books' settlement receipts, all as CSV.`
     );
-    answerPolicy(
-      company,
-      "receipt.allocation",
-      alloc === "date" ? "Agst Ref by sales date" : "Agst Ref oldest first"
-    );
-    answerPolicy(
-      company,
-      "contra_rules",
-      own === "yes"
-        ? "Cash deposits → Contra from Cash; transfers to ICICI ·4105 (own account, confirmed) → Contra"
-        : "Cash deposits → Contra from Cash; transfers to ICICI ·4105 are party payments"
-    );
-    if (choice !== "approve") {
-      await api.say(
-        "Kept as a draft with your answers. Nothing is reconciled until it's approved."
-      );
-      return "Policy kept as draft";
-    }
-    approvePolicy(company);
-    api.status(null);
-    await api.say("**Policy v1 approved**, effective 1 Sep 2026.");
-    return "Policy v1 approved";
+    api.suggest(["Reconcile September"]);
+    return "Configuration confirmed";
   },
 };
 

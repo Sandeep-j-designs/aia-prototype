@@ -908,6 +908,50 @@ const EMPTY_OPTIONS: InventoryOptions = {
  * DEV: GET /api/inventory-masters/items?companyId=… and
  * GET /api/inventory-masters/items/options?companyId=….
  */
+const NANDHINI_STOCK = [
+  ["Sona Masuri Rice", "Kg", 350, 58],
+  ["Toor Dal", "Kg", 90, 145],
+  ["Sunflower Oil", "L", 120, 130],
+  ["Fresh Vegetables", "Kg", 180, 45],
+  ["Milk", "L", 80, 60],
+  ["Curd", "Kg", 60, 85],
+  ["Spice Mix", "Kg", 25, 420],
+  ["Takeaway Containers", "Nos", 1800, 6],
+] as const;
+const NANDHINI_OPTIONS: InventoryOptions = {
+  groups: [
+    { label: "Primary", value: GROUP.primary },
+    { label: "Kitchen Supplies", value: "nd-kitchen" },
+  ],
+  categories: [{ label: "Not Applicable", value: CATEGORY.na }],
+  units: ["Kg", "L", "Nos"].map((label) => ({
+    label,
+    value: `nd-unit-${label}`,
+  })),
+  hsnSac: [],
+  godowns: ["JP Nagar", "Koramangala"].map((label) => ({
+    label,
+    value: `nd-godown-${label}`,
+  })),
+};
+const NANDHINI_ITEMS = NANDHINI_STOCK.map(([name, unit, qty, rate], n) => ({
+  ...build({
+    id: `nd-stock-${n}`,
+    name,
+    under: "nd-kitchen",
+    category: CATEGORY.na,
+    unit: `nd-unit-${unit}`,
+    qty,
+    rate,
+    sync: "synced",
+    godowns: [
+      ["nd-godown-JP Nagar", qty * 0.6],
+      ["nd-godown-Koramangala", qty * 0.4],
+    ],
+  }),
+  eligibleForInputTaxCredit: false,
+}));
+
 export const seedFor = (companyId: string): InventorySeed =>
   companyId === "shakun"
     ? { items: MOCK_STOCK_ITEMS, options: MOCK_INVENTORY_OPTIONS }
@@ -916,4 +960,6 @@ export const seedFor = (companyId: string): InventorySeed =>
           items: ACME_SEEDS.map(acmeStock).map(build),
           options: ACME_INVENTORY_OPTIONS,
         }
-      : { items: [], options: EMPTY_OPTIONS };
+      : companyId === "nandhini"
+        ? { items: NANDHINI_ITEMS, options: NANDHINI_OPTIONS }
+        : { items: [], options: EMPTY_OPTIONS };

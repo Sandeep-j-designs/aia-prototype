@@ -21,6 +21,7 @@ import { opensInCanvas, sameDoc } from "@/utils/pages/neo/canvas";
 import Message, { DocStrip } from "./message";
 import TurnActions from "./turn-actions";
 import UserMessage from "./user-message";
+import GuideCoach from "@/components/neo/onboarding/guide";
 
 /** The message the running task is waiting on, if any. */
 export const useLiveMessage = (neo: NeoRuntime) =>
@@ -239,17 +240,18 @@ const Thread = ({ variant, onPrompt, scope, header, onOpenScope }: Props) => {
 
   return (
     <TooltipProvider delayDuration={500}>
-      <div className="relative min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {!scope && <GuideCoach onPrompt={onPrompt} />}
         <div
           ref={scroller}
           onScroll={measure}
-          className="h-full overflow-y-auto overscroll-contain [overflow-wrap:anywhere]"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-wrap:anywhere]"
         >
           <div
             className={cn(
               "mx-auto flex flex-col",
               page
-                ? "max-w-[760px] gap-8 px-4 py-6 sm:px-6 sm:py-8"
+                ? "max-w-[720px] gap-7 px-4 py-5 sm:px-6 sm:py-7"
                 : "gap-8 px-5 py-5"
             )}
           >
@@ -273,13 +275,14 @@ const Thread = ({ variant, onPrompt, scope, header, onOpenScope }: Props) => {
                 [...t.neo].reverse().find((m) => m.text) ||
                 t.neo[t.neo.length - 1];
               const streaming = t.neo.some((m) => m.streaming);
-              const stepping = t.neo.some((m) =>
-                m.steps?.some((s) => s.status === "running")
-              );
+              // The run's newest message is its reasoning: that block
+              // shows the work, so no second "Thinking" line under it.
+              // Documents shown along the way sit under it, so look past them.
+              const at = t.neo.findLastIndex((m) => !docOnly(m));
+              const tail = t.neo[at];
+              const stepping = running && !!tail?.steps;
               const waiting = running && !!live && t.neo.includes(live);
-              const status = waiting
-                ? "Waiting for you"
-                : neo.paused
+              const status = neo.paused
                   ? "Paused"
                   : neo.liveStatus?.text || "Thinking";
               return (
@@ -289,7 +292,7 @@ const Thread = ({ variant, onPrompt, scope, header, onOpenScope }: Props) => {
                   aria-label={t.user ? "Request and answer" : "Neo"}
                   className={cn(
                     "group/turn flex flex-col",
-                    page ? "gap-6" : "gap-5",
+                    page ? "gap-5" : "gap-4",
                     "duration-300 animate-in fade-in-0 slide-in-from-bottom-2 motion-reduce:animate-none"
                   )}
                   // The last turn holds the view's height, so a new request
@@ -332,6 +335,7 @@ const Thread = ({ variant, onPrompt, scope, header, onOpenScope }: Props) => {
                           message={m}
                           live={live?.id === m.id}
                           running={!!m.runId && m.runId === neo.busy}
+                          current={running && m === tail}
                           paused={neo.paused}
                           onAnswer={(v) => neo.answer(m.id, v)}
                           onEditCard={(card) => neo.editCard(m.id, card)}
@@ -370,25 +374,29 @@ const Thread = ({ variant, onPrompt, scope, header, onOpenScope }: Props) => {
                     )
                   )}
                   {running ? (
-                    !streaming && !stepping ? (
-                      <div
-                        className="flex h-7 items-center gap-2.5 text-[13px] text-pi-body"
+                    // Like the chat apps: one shimmering word until Neo has
+                    // something to show. Waiting on an answer, the question
+                    // sheet is the cue; streaming, the words are.
+                    !streaming && !stepping && !waiting ? (
+                      <p
+                        className="flex min-h-7 items-center text-[13px] font-medium text-pi-ink-2"
                         aria-live="polite"
                       >
-                        <NeoGlyph working={!neo.paused && !waiting} />
-                        <span
-                          className={cn(
-                            !waiting && !neo.paused && "neo-shimmer"
-                          )}
-                        >
+                        <span className={cn(!neo.paused && "neo-shimmer")}>
                           {status}
                         </span>
-                      </div>
-                    ) : (
-                      <NeoGlyph working />
-                    )
+                      </p>
+                    ) : null
                   ) : (
-                    t.neo.length > 0 &&
+                    // A turn that only handed over to the guide has no
+                    // answer to copy, retry or rate.
+                    t.neo.some(
+                      (m) =>
+                        m.text ||
+                        m.steps ||
+                        m.ask ||
+                        (m.card && m.card.kind !== "guide-choice")
+                    ) &&
                     !t.neo[t.neo.length - 1].stopped && (
                       <div
                         className={cn(

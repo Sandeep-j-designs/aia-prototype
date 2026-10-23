@@ -1,3 +1,4 @@
+import type { GuideCoachNote } from "@/hooks/pages/neo/use-recon-onboarding";
 import type { NeoStepBy } from "@/types/pages/neo/skills";
 
 /**
@@ -47,6 +48,13 @@ export type NeoStep = {
   cite?: NeoRef;
   /** The skill or tool that did the step (types/pages/neo/skills.ts). */
   by?: NeoStepBy;
+  /**
+   * A line of Neo's reasoning rather than a tool call: written, never
+   * running (21 Oct 2026).
+   */
+  kind?: "thought";
+  /** The journey step (1–8) it belongs to, for the reasoning's headings. */
+  stage?: number;
   /** Epoch ms the step started and landed, for "Worked for 1.4s". */
   startedAt?: number;
   endedAt?: number;
@@ -115,22 +123,34 @@ export type NeoTone = "neutral" | "positive" | "notice" | "negative";
 export type NeoCard =
   | {
       /**
-       * Three-way reconciliation (20 Oct 2026). The card reads the policy
-       * or the run live from the recon store; `view` is which step it is.
+       * Three-way reconciliation (AiA 2.0 PRD). The card reads the
+       * configuration or the run live from the recon store.
        */
       kind: "recon";
       company: string;
       runId?: string;
-      view:
-        | "policy"
-        | "reports"
-        | "payouts"
-        | "sales"
-        | "bank"
-        | "register"
-        | "drafts"
-        | "close"
-        | "rules";
+      /** Configuration (US-01), sources (US-02/03), results (US-04–06),
+       * review (US-07). */
+      view: "config" | "sources" | "results" | "review";
+    }
+  | {
+      /**
+       * The reconciliation report as an Excel file (21 Oct 2026): it
+       * replaces the result document. One card per version; an older one
+       * says it was superseded.
+       */
+      kind: "recon-report";
+      company: string;
+      runId: string;
+      version: number;
+    }
+  | {
+      /** The guided first run's opening choice: sample data or your own. */
+      kind: "guide-choice";
+    }
+  | {
+      /** The guided first run, waiting for your files. */
+      kind: "guide-upload";
     }
   | {
       kind: "decisions";
@@ -155,6 +175,18 @@ export type NeoAttachment = { name: string; docId?: string };
 export type NeoMessage = {
   id: string;
   role: "user" | "neo";
+  /**
+   * On a reasoning block: the journey step (1–8) Neo is on, which names
+   * the block while it works.
+   */
+  phase?: number;
+  /** On a reasoning block: the sources it is reading, as chips. */
+  sources?: string[];
+  /**
+   * On an answer that follows Neo's reasoning: "Answering" while it
+   * streams, then how long the request took, in ms.
+   */
+  timing?: { ms?: number };
   /** Files the user sent with this message. */
   attachments?: NeoAttachment[];
   runId?: string;
@@ -246,6 +278,23 @@ export type NeoTaskApi = {
   signal: AbortSignal;
   focus: (itemId: string) => void;
   say: (text: string, links?: NeoRef[]) => Promise<void>;
+  /**
+   * Move to a journey step (1–8): the reasoning block takes its name.
+   * Nothing is drawn in the thread for it.
+   */
+  stage: (n: number) => void;
+  /**
+   * One line of reasoning: what Neo is reading, noticing or deciding. It
+   * goes in the reasoning block, not the answer.
+   */
+  think: (text: string) => Promise<void>;
+  /** The sources the reasoning is reading, shown as chips under its name. */
+  sources: (names: string[]) => void;
+  /**
+   * The guided first run's annotation for this moment, pinned to a part of
+   * the screen; on the guided run only. Not a message: it isn't Neo talking.
+   */
+  coach: (step: number, note: Omit<GuideCoachNote, "step">) => Promise<void>;
   /** Offer follow-up requests as one-tap chips once the run is done. */
   suggest: (prompts: string[]) => void;
   /**

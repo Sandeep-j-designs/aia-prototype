@@ -1,3 +1,4 @@
+import { NANDHINI_PURCHASES } from "./mock-nandhini";
 import type {
   AccountingMastersCounts,
   CoaSyncStatus,
@@ -1056,6 +1057,63 @@ const ACME_LEDGERS: LedgerDetailResponse[] = [
  * DEV: GET /api/accounting-masters/ledger-groups and
  * GET /api/accounts/coa-list-v2, scoped to the session's company.
  */
+const NANDHINI_LEDGERS = [
+  ...NANDHINI_PURCHASES.map((p, n) =>
+    ledger(`nd-vendor-${n}`, p.vendor, "grp-sundry-creditors")
+  ),
+  ...[
+    ...new Set(NANDHINI_PURCHASES.map((p) => p.ledger)),
+    "Rent",
+    "Salaries",
+    "Depreciation",
+    "Bank Charges",
+    "MDR Charges",
+    "Zomato Commission",
+    "Swiggy Commission",
+    "Marketing – Platform Ads",
+    "Platform Other Charges",
+    "Office Expenses",
+    "Round Off",
+  ].map((name, n) =>
+    ledger(
+      `nd-expense-${n}`,
+      name,
+      name === "Purchase – Ingredients"
+        ? "grp-purchase-accounts"
+        : "grp-indirect-expenses"
+    )
+  ),
+  ...[
+    "Walk-in Customers",
+    "Orion Tech Park",
+    "Bengaluru Events Co",
+    "HDFC Card Receivable – JP Nagar",
+    "HDFC UPI Receivable – JP Nagar",
+    "Zomato Receivable",
+    "Swiggy Receivable",
+    "Ownly Receivable",
+  ].map((name, n) => ledger(`nd-customer-${n}`, name, "grp-sundry-debtors")),
+  ...[
+    "Input CGST",
+    "Input SGST",
+    "Output CGST",
+    "Output SGST",
+    "GST Payable",
+  ].map((name, n) => ledger(`nd-tax-${n}`, name, "grp-duties-taxes")),
+  ledger("nd-sales", "Restaurant Sales", "grp-sales-accounts"),
+  ledger("nd-hdfc", "HDFC Current A/c - 0418", "grp-bank-accounts"),
+  ledger("nd-icici", "ICICI Current A/c - 4105", "grp-bank-accounts"),
+  ledger("nd-cash", "Cash", "grp-cash-in-hand"),
+  ledger("nd-payroll", "Salaries Payable", "grp-current-liabilities"),
+  ledger("nd-rent", "Rent Payable", "grp-current-liabilities"),
+  ledger("nd-equipment", "Kitchen Equipment", "grp-fixed-assets"),
+  ledger("nd-depreciation", "Accumulated Depreciation", "grp-fixed-assets"),
+  ledger("nd-tds", "TDS Receivable – 194-O", "grp-loans-advances"),
+  ledger("nd-loan", "Loan to Nandhini Foods LLP", "grp-loans-advances"),
+  ledger("nd-refunds", "Zomato Cancellation Refunds", "grp-indirect-incomes"),
+  ledger("nd-suspense", "Suspense A/c", "grp-suspense"),
+];
+
 export const seedFor = (
   companyId: string
 ): { groups: LedgerGroupListItem[]; ledgers: LedgerDetailResponse[] } => ({
@@ -1065,5 +1123,7 @@ export const seedFor = (
       ? MOCK_LEDGERS
       : companyId === "acme"
         ? ACME_LEDGERS
-        : [],
+        : companyId === "nandhini"
+          ? NANDHINI_LEDGERS
+          : [],
 });

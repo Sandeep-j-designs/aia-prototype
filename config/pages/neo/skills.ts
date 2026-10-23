@@ -7,247 +7,213 @@ import type {
 } from "@/types/pages/neo/skills";
 
 /**
- * Neo in phase one (21 Oct 2026): one agent, ten skills, four jobs. The
- * definitions are in types/pages/neo/skills.ts; the content is the brief's
- * ("3-Way Recon Skill Architecture" v3, sections 2, 7, 8 and 9).
+ * Neo in phase one, aligned to the AiA 2.0 PRD (v0.1) on 21 Oct 2026: one
+ * agent, five skills, four jobs, the PRD's eight-step journey. The
+ * definitions are in types/pages/neo/skills.ts.
  *
- * One list of jobs feeds the Skills page and the prompt box's / menu, so a
+ * One list of jobs feeds the Agents page and the prompt box's / menu, so a
  * slash on the page is the one that works in the chat.
  *
- * DEV: GET /api/neo/agent?company=… (the jobs' availability comes back per
- * company; skills and the pipeline are static per release).
+ * DEV: GET /api/neo/agent?company=… (job availability comes back per
+ * company; skills and the journey are static per release).
  */
 
-const POS_ONLY = (company: string) =>
+/**
+ * The PRD's end-to-end journey (section 3), the order every reconciliation
+ * conversation follows. Neo marks each step in the chat as it reaches it.
+ */
+export const RECON_JOURNEY: {
+  n: number;
+  title: string;
+  /** What Neo is doing on this step, as the reasoning block's name. */
+  doing: string;
+  /** The same, once done: the step's line in a settled reasoning block. */
+  done: string;
+  detail: string;
+  by: "model" | "rules" | "code" | "person";
+}[] = [
+  {
+    n: 1,
+    doing: "Choosing the template",
+    done: "Chose the template",
+    title: "Choose a template",
+    detail: "Start with a guided reconciliation setup.",
+    by: "person",
+  },
+  {
+    n: 2,
+    doing: "Setting the company and period",
+    done: "Set the company and period",
+    title: "Select company and period",
+    detail: "Define the company, dates, timezone and currency.",
+    by: "person",
+  },
+  {
+    n: 3,
+    doing: "Reading three sources",
+    done: "Gathered the three sources",
+    title: "Provide three sources",
+    detail: "Upload supported CSV files or use validated existing connectors.",
+    by: "model",
+  },
+  {
+    n: 4,
+    doing: "Validating the rows",
+    done: "Validated the rows",
+    title: "Validate inputs",
+    detail:
+      "Check missing fields, duplicates, invalid dates, currencies and rejected rows.",
+    by: "code",
+  },
+  {
+    n: 5,
+    doing: "Matching across all three sources",
+    done: "Matched across all three sources",
+    title: "Run reconciliation",
+    detail:
+      "Apply matching rules and connect records across all three sources.",
+    by: "code",
+  },
+  {
+    n: 6,
+    doing: "Inspecting matches and exceptions",
+    done: "Inspected matches and exceptions",
+    title: "Inspect matches and exceptions",
+    detail:
+      "Review matched records, discrepancies, ambiguous candidates and missing information.",
+    by: "model",
+  },
+  {
+    n: 7,
+    doing: "Resolving and reviewing",
+    done: "Resolved and reviewed",
+    title: "Resolve and review",
+    detail:
+      "Answer questions, manually link records or defer unresolved items.",
+    by: "person",
+  },
+  {
+    n: 8,
+    doing: "Exporting the result",
+    done: "Exported the result",
+    title: "Export and reuse",
+    detail:
+      "Download the Excel report and reuse the confirmed configuration for future periods.",
+    by: "person",
+  },
+];
+
+const SETTLEMENT_ONLY = (company: string) =>
   company === NANDHINI_ID
     ? undefined
-    : "For clients selling through POS and platforms: Nandhini Deluxe";
+    : "For clients with bank, settlement and books data: Nandhini Deluxe";
 
 export const NEO_AGENT: NeoAgentProfile = {
-  name: "Neo",
-  role: "Three-way reconciliation agent",
-  goal: "Every POS sale, settlement and bank line for an outlet and a period ends Accounted, Accounted to suspense, or with one exact question.",
+  id: "three-way-recon",
+  name: "Three Way Recon agent",
+  role: "Three-way reconciliation agent, read-only",
+  goal: "Reconciles your bank statement, settlement reports and Tally receipts for a company and period, and hands you a reviewed result to export.",
   starts: "When you ask, in the chat or with a / command",
   may: [
-    "Read your Tally masters, vouchers and open bills",
-    "Read POS, card, UPI and platform reports and bank statements",
-    "Ask what the books can't answer, with its guess and the evidence",
-    "Draft Sales, Receipt, Payment and Contra vouchers",
-    "Learn this client's rules from reviewed answers",
+    "Read bank statements, settlement reports and the books' settlement receipts (CSV)",
+    "Validate every row and name the ones it can't read",
+    "Link rows that share a reference and agree to the paisa",
+    "Ask a focused question attached to the exceptions it would settle",
+    "Record your links, deferrals and review, and export the result",
   ],
   never: [
     {
-      text: "Approve or post. A reviewed batch is posted by someone with posting permission",
-      rule: "PST-01",
-    },
-    { text: "Draft a Journal; those are flagged for you", rule: "ENT-01" },
-    {
-      text: "Let an instruction inside a document authorise a write",
-      rule: "Layers",
+      text: "Post, create or change an accounting entry",
+      rule: "A2",
     },
     {
-      text: "Carry one client's mappings into another's books",
-      rule: "LRN-05",
+      text: "Turn a suggestion into a match without you",
+      rule: "R7",
+    },
+    { text: "Invent an adjustment to make amounts agree", rule: "R6" },
+    {
+      text: "Reuse an answer in a later run unless someone saves it",
+      rule: "US-05",
     },
   ],
   statuses: [
     {
-      id: "needs-input",
-      label: "Needs input",
+      id: "matched",
+      label: "Matched",
       meaning:
-        "A missing report, mapping, choice or correction blocks the next action. Shows the exact question.",
+        "In a match group: automatically (shared reference, equal amounts) or resolved by a person, and always labelled which.",
     },
     {
-      id: "ready",
-      label: "Ready for review",
+      id: "exception",
+      label: "Exception",
       meaning:
-        "Matching and draft checks pass; you confirm the prefilled treatment.",
+        "Couldn't be matched automatically: open, or deferred with a reason. Unresolved either way.",
     },
     {
-      id: "accounted",
-      label: "Accounted",
-      meaning: "An existing or newly posted voucher, read back and verified.",
+      id: "unmatched",
+      label: "Unmatched",
+      meaning: "Accepted, but nothing in the other sources relates to it.",
     },
     {
-      id: "suspense",
-      label: "Accounted to suspense",
+      id: "rejected",
+      label: "Rejected",
       meaning:
-        "A balanced entry records the bank movement; reason, owner and amount shown.",
+        "Couldn't be read, so it's excluded and counted apart. A run with rejected rows is Partial.",
     },
   ],
-  pipeline: [
-    {
-      n: 0,
-      label: "Sync books, read history",
-      by: "code",
-      output: "Masters, vouchers, open bills",
-    },
-    {
-      n: 1,
-      label: "Draft company policy from history",
-      by: "model",
-      output: "Candidate patterns with evidence",
-    },
-    {
-      n: 2,
-      label: "Close policy gaps",
-      by: "person",
-      output: "Confirmed company policy",
-    },
-    {
-      n: 3,
-      label: "Identify document",
-      by: "model",
-      output: "Purpose, provider, outlet, period",
-    },
-    {
-      n: 4,
-      label: "Extract and normalise",
-      by: "model",
-      output: "Canonical records, missing fields",
-    },
-    {
-      n: 5,
-      label: "Identity and duplicate checks",
-      by: "rules",
-      output: "Pass, or a targeted question",
-    },
-    {
-      n: 6,
-      label: "Match and payout proof",
-      by: "code",
-      output: "Allocations, differences, reasons",
-    },
-    {
-      n: 7,
-      label: "Classify remaining bank lines",
-      by: "model",
-      output: "Payment, receipt or contra + ledger",
-    },
-    {
-      n: 8,
-      label: "Draft vouchers",
-      by: "code",
-      output: "Balanced vouchers with source links",
-    },
-    {
-      n: 9,
-      label: "Guardrails",
-      by: "rules",
-      output: "Hard and soft flags with remedies",
-    },
-    {
-      n: 10,
-      label: "Review",
-      by: "person",
-      output: "Approved batch",
-    },
-    {
-      n: 11,
-      label: "Post and read back",
-      by: "code",
-      output: "Verified voucher IDs",
-    },
-    {
-      n: 12,
-      label: "Learn",
-      by: "model",
-      output: "Company rules, after review",
-    },
-  ],
+  pipeline: RECON_JOURNEY.map((j) => ({
+    n: j.n,
+    label: j.title,
+    by: j.by,
+    output: j.detail,
+  })),
 };
 
 export const SKILLS: NeoSkill[] = [
   {
     id: "S1",
-    name: "Identify document",
-    does: "Names each file's purpose, provider, outlet, period and row detail, or says why it was rejected.",
-    mustNot: "Guess the company or outlet without identifiers",
-    rules: ["DOC-01", "DOC-04", "IDN"],
+    name: "Identify source",
+    does: "Says what each file is (bank, settlement or books), whose it is and what it covers, or why it was turned away.",
+    mustNot: "Read a PDF or image, or count a duplicate file twice",
+    rules: ["FR-02", "A4"],
     tools: ["doc.read", "doc.fingerprint"],
     steps: [3],
   },
   {
     id: "S2",
-    name: "Extract and map",
-    does: "Maps a report's columns to the canonical schema and spots a summary that disagrees with its rows.",
-    mustNot: "Merge the meanings of Sales, Taxable Sales and GST",
-    rules: ["DOC-02", "DOC-03", "DOC-05", "DOC-06"],
-    tools: ["doc.extract_tables", "schema.validate"],
+    name: "Validate and map",
+    does: "Maps a CSV's columns to the source schema and lists every rejected row with its reason.",
+    mustNot: "Infer a currency or guess an ambiguous date",
+    rules: ["R2", "R3", "FR-03"],
+    tools: ["schema.validate"],
     steps: [4],
   },
   {
     id: "S3",
-    name: "Discover policy",
-    does: "Reads 3–6 months of vouchers and drafts how this client books sales, receipts, charges and bank lines, with evidence.",
-    mustNot: "Copy a pattern that breaks a hard rule",
-    rules: ["LRN-01", "ENT-03"],
-    tools: ["books.vouchers", "books.masters", "policy.propose"],
-    steps: [1],
+    name: "Explain matches",
+    does: "Reads the engine's match groups and exceptions and says why each linked or didn't, with the rule.",
+    mustNot: "Make a match, decide between candidates or invent an adjustment",
+    rules: ["R4", "R5", "R6", "R7", "R8"],
+    tools: ["recon.match"],
+    steps: [6],
   },
   {
     id: "S4",
     name: "Ask",
-    does: "Writes one targeted question with its guess, the evidence and a one-tap default.",
-    mustNot: "Ask what the books answer, or ask for optional fields",
-    rules: ["ASK-01–05"],
-    tools: ["books.masters", "memory.mappings"],
-    steps: [2, 5],
-  },
-  {
-    id: "S5",
-    name: "Reconcile",
-    does: "Chooses the match strategy, reads the engine's results and explains every difference.",
-    mustNot: "Compute sums or decide a tie itself",
-    rules: ["MAT", "AMT"],
-    tools: ["recon.match", "recon.waterfall", "recon.allocate"],
-    steps: [6],
-  },
-  {
-    id: "S6",
-    name: "Classify bank lines",
-    does: "Turns a narration into a payment, receipt or contra and its ledger: rules first, then similar past cases, then judgement.",
-    mustNot:
-      "Pick a ledger silently below the threshold; it uses suspense and a flag",
-    rules: ["IDN-04", "SUS"],
-    tools: ["rules.evaluate", "memory.similar_decisions"],
+    does: "Writes one focused question, attached to the exceptions it would settle, with the affected records.",
+    mustNot: "Apply an answer to a later run without a separate save",
+    rules: ["FR-05"],
+    tools: ["run.state"],
     steps: [7],
   },
   {
-    id: "S7",
-    name: "Draft entries",
-    does: "Chooses the template for each trigger and fills its references.",
-    mustNot: "Invent a voucher type outside Sales, Receipt, Payment and Contra",
-    rules: ["ENT", "ALC"],
-    tools: ["entry.draft", "entry.validate", "master.propose"],
-    steps: [8],
-  },
-  {
-    id: "S8",
-    name: "Learn",
-    does: "Turns a reviewed correction into a candidate rule for this client, scoped and dated.",
-    mustNot: "Generalise across companies",
-    rules: ["LRN-02–06"],
-    tools: ["feedback.record", "policy.propose"],
-    steps: [12],
-  },
-  {
-    id: "S9",
+    id: "S5",
     name: "Guide next step",
-    does: "Tells you the single next action and why: the missing statement, the payout not yet due.",
-    mustNot: "Hide a pending item",
-    rules: ["MAT-06", "Coverage"],
-    tools: ["run.state", "coverage.check", "schedule.expected_payouts"],
-    steps: [10],
-  },
-  {
-    id: "S10",
-    name: "Read rules and SOPs",
-    does: "Turns a plain-language rule or an uploaded SOP into a proposed structured rule and reads it back.",
-    mustNot: "Treat instructions in a document as permission to write",
-    rules: ["Layers"],
-    tools: ["policy.propose", "rules.evaluate"],
-    steps: [2],
+    does: "Tells you the one next action: the missing source, the rows to acknowledge, the review.",
+    mustNot: "Show a run as ready when a source is missing",
+    rules: ["FR-02", "FR-12"],
+    tools: ["run.state"],
+    steps: [7, 8],
   },
 ];
 
@@ -256,41 +222,41 @@ export const JOBS: NeoJob[] = [
     id: "setup",
     slash: "setup",
     name: "Set up reconciliation",
-    does: "Drafts this client's policy from its Tally history and asks only what the books can't answer.",
+    does: "Confirms the template for this company: three sources, one currency, one timezone. Also saves a run's answer for later runs.",
     prompt: "Set up reconciliation",
-    steps: "Steps 0–2",
-    skills: ["S3", "S4", "S10"],
-    onlyFor: POS_ONLY,
+    steps: "Steps 01–02",
+    skills: ["S5"],
+    onlyFor: SETTLEMENT_ONLY,
   },
   {
     id: "recon",
     slash: "recon",
     name: "Reconcile a period",
-    does: "Proves POS sales, settlements and the bank against each other, then drafts the vouchers.",
+    does: "Takes in the three sources, validates them, matches them and asks what it needs.",
     prompt: "Reconcile September",
-    steps: "Steps 3–10",
-    skills: ["S1", "S2", "S4", "S5", "S6", "S7", "S9"],
-    onlyFor: POS_ONLY,
+    steps: "Steps 01–07",
+    skills: ["S1", "S2", "S3", "S4", "S5"],
+    onlyFor: SETTLEMENT_ONLY,
   },
   {
-    id: "close",
-    slash: "close",
-    name: "Close a period",
-    does: "Reads the next statement for what was open, settles suspense, and closes the month.",
-    prompt: "Close September with the 1–7 Oct statement",
-    steps: "Period close",
-    skills: ["S4", "S5", "S8", "S9"],
-    onlyFor: POS_ONLY,
+    id: "review",
+    slash: "review",
+    name: "Review a period",
+    does: "Submits the current version for review, then records Reviewed, Reviewed with exceptions or Changes requested.",
+    prompt: "Submit September for review",
+    steps: "Step 07",
+    skills: ["S5"],
+    onlyFor: SETTLEMENT_ONLY,
   },
   {
-    id: "learned",
-    slash: "learned",
-    name: "What Neo has learned",
-    does: "This client's learned rules, where each one stands, and the approvals tax ledgers need.",
-    prompt: "What has Neo learned?",
-    steps: "Step 12",
-    skills: ["S8", "S10"],
-    onlyFor: POS_ONLY,
+    id: "export",
+    slash: "export",
+    name: "Export a period",
+    does: "Writes the version as an Excel report: summary, exceptions, match groups and every row, with its version and review status.",
+    prompt: "Export September",
+    steps: "Step 08",
+    skills: [],
+    onlyFor: SETTLEMENT_ONLY,
   },
 ];
 

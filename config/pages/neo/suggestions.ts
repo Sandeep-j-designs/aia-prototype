@@ -1,7 +1,13 @@
 import { JOBS } from "@/config/pages/neo/skills";
-import { getBankingState } from "@/hooks/pages/inbox/use-banking";
 import { companyOf, getState } from "@/components/inbox/v2/store";
-import { latestRun, policyOf, rulesOf } from "@/hooks/pages/neo/use-recon";
+import {
+  REVIEW_LABEL,
+  configOf,
+  currentVersion,
+  latestRun,
+  latestUnsavedAnswer,
+} from "@/hooks/pages/neo/use-recon";
+import type { ReconPeriodId } from "@/types/pages/neo/recon";
 import type { NeoContext } from "@/types/pages/neo";
 
 export type TodayItem = {
@@ -13,16 +19,20 @@ export type TodayItem = {
   /** The request that works on it; one of the agent's jobs. */
   prompt: string;
   tone: "negative" | "notice" | "neutral";
+  /** Where the work stands, for the row's glyph. */
+  kind:
+    "setup" | "not-run" | "waiting" | "review" | "pending" | "done" | "save";
 };
 
 /**
  * Neo's home leads with where three-way reconciliation stands at this
- * client (phase one, 21 Oct 2026): not set up, a month not reconciled, a
- * month reconciled but not closed, rules waiting on an approval. Each line
- * is a job Neo runs. At most four, in the order the work happens.
+ * client (aligned to the AiA 2.0 PRD, 21 Oct 2026): no configuration, a
+ * period not reconciled or waiting for inputs, a version waiting for
+ * review, an answer that applies to one run only. Each line is a job Neo
+ * runs. At most four, in the order the work happens.
  *
- * A client that doesn't sell through POS or platforms gets nothing: the
- * home says why instead (see `unavailableFor`).
+ * A client without settlement data gets nothing: the home says why
+ * instead (see `unavailableFor`).
  *
  * DEV: GET /api/neo/today?company=… — the recon run state for one client.
  */
@@ -30,62 +40,79 @@ export const todayFor = (company: string): TodayItem[] => {
   if (unavailableFor(company)) return [];
   const name = companyOf(company)?.name ?? "this client";
   const out: TodayItem[] = [];
-
-  if (policyOf(company)?.status !== "approved")
+  if (!configOf(company))
     out.push({
       id: "setup",
       text: `Reconciliation isn't set up for ${name}`,
-      detail: "Neo drafts the policy from Jun–Aug vouchers before it asks",
+      detail: "Confirm the template: three sources, INR, India time",
       prompt: "Set up reconciliation",
       tone: "notice",
+      kind: "setup",
     });
 
+  const period = (id: ReconPeriodId, short: string) => {
+    const run = latestRun(company, id);
+    const v = run && currentVersion(run);
+    if (!run || !v || run.execution === "cancelled")
+      return out.push({
+        id,
+        text: `${short} not reconciled`,
+        detail:
+          "Bank ·0418, card, UPI, Zomato and Swiggy settlements, Tally receipts",
+        prompt: `Reconcile ${short}`,
+        tone: id === "sep" ? "notice" : "neutral",
+        kind: "not-run",
+      });
+    if (run.execution !== "completed")
+      return out.push({
+        id,
+        text: `${short} is waiting for inputs`,
+        detail: "A source, a row correction or an answer is missing",
+        prompt: `Reconcile ${short}`,
+        tone: "notice",
+        kind: "waiting",
+      });
+    if (v.review === "not-submitted" || v.review === "changes-requested")
+      return out.push({
+        id,
+        text: `${short} version ${v.n} isn't reviewed`,
+        detail: `${v.exceptions.length} exceptions unresolved · ${v.completeness === "full" ? "Full" : "Partial"}`,
+        prompt: `Submit ${short} for review`,
+        tone: "notice",
+        kind: "review",
+      });
+    if (v.review === "pending-review")
+      return out.push({
+        id,
+        text: `${short} version ${v.n} is pending review`,
+        detail: "You hold the reviewer role for this company",
+        prompt: `Record the review for ${short}`,
+        tone: "neutral",
+        kind: "pending",
+      });
+    return out.push({
+      id,
+      text: `${short} is ${REVIEW_LABEL[v.review].toLowerCase()}`,
+      detail: `Version ${v.n}, ready to share as Excel`,
+      prompt: `Export ${short}`,
+      tone: "neutral",
+      kind: "done",
+    });
+  };
+  period("sep", "September");
   const sep = latestRun(company, "sep");
-  const uncoded = getBankingState(company).transactions.filter(
-    (t) => !t.paymentType
-  ).length;
-  if (!sep || sep.stage !== "created")
-    out.push({
-      id: "recon",
-      text: uncoded
-        ? `${uncoded} September bank lines not reconciled`
-        : "September not reconciled",
-      detail: "POS, Zomato, Swiggy and card settlements against HDFC ·0418",
-      prompt: "Reconcile September",
-      tone: "notice",
-    });
-  else if (!sep.closed) {
-    const suspense = sep.suspense.filter((s) => s.state === "open").length;
-    out.push({
-      id: "close",
-      text: "September reconciled, not closed",
-      detail: [
-        `${sep.open.length} receivable${sep.open.length === 1 ? "" : "s"} open at month-end`,
-        suspense && `${suspense} in suspense`,
-        !sep.evidence && "needs the 1–7 Oct statement",
-      ]
-        .filter(Boolean)
-        .join(" · "),
-      prompt: "Close September with the 1–7 Oct statement",
-      tone: "neutral",
-    });
-  } else if (!latestRun(company, "oct"))
-    out.push({
-      id: "oct",
-      text: "1–15 October not reconciled",
-      detail: "September's formats, payers and rules carry over",
-      prompt: "Reconcile 1–15 October",
-      tone: "neutral",
-    });
+  if (sep && currentVersion(sep)?.review.startsWith("reviewed"))
+    period("oct", "1–15 October");
 
-  const waiting = rulesOf(company).filter((r) => r.state === "proposed");
-  if (waiting.length)
+  const unsaved = latestUnsavedAnswer(company);
+  if (unsaved)
     out.push({
-      id: "learned",
-      text: `${waiting.length} learned rule${waiting.length === 1 ? " waits" : "s wait"} for your approval`,
-      detail: "Rules that book to a GST, TDS or TCS ledger need one approval",
-      prompt: "What has Neo learned?",
-      tone: "notice",
+      id: "save",
+      text: `An answer from ${unsaved.run.period.label} applies to that run only`,
+      detail: "Save it to the configuration to reuse it in later runs",
+      prompt: "Save the answer to the configuration",
+      tone: "neutral",
+      kind: "save",
     });
 
   return out.slice(0, 4);

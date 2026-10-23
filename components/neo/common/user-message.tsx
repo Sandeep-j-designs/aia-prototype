@@ -87,7 +87,7 @@ const UserMessage = ({
             }
           }}
           rows={1}
-          className="max-h-60 min-h-12 w-full resize-none bg-transparent text-[15px] leading-6 text-pi-ink focus-visible:outline-none [field-sizing:content]"
+          className="max-h-60 min-h-12 w-full resize-none bg-transparent text-[14px] leading-[22px] text-pi-ink focus-visible:outline-none [field-sizing:content]"
         />
         <div className="mt-2 flex items-center justify-between gap-2">
           <p className="text-body-4 text-pi-faint">
@@ -159,7 +159,7 @@ const UserMessage = ({
         <p
           ref={body}
           className={cn(
-            "whitespace-pre-wrap text-[15px] leading-6 text-pi-ink",
+            "whitespace-pre-wrap text-[14px] leading-[22px] text-pi-ink",
             tall && !expanded && "overflow-hidden"
           )}
           style={tall && !expanded ? { maxHeight: FOLD } : undefined}

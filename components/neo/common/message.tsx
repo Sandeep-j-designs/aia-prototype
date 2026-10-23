@@ -1,6 +1,7 @@
 import ReconCard from "./recon-card";
-import DecisionsCard from "./decisions-card";
-import { registerCounts, useRecon } from "@/hooks/pages/neo/use-recon";
+import ReconReport from "./recon-report";
+import DecisionsCard, { replyOf } from "./decisions-card";
+import { Button } from "@/components/ui/button";
 import React, { useState } from "react";
 import {
   ArrowUpRight,
@@ -9,6 +10,7 @@ import {
   CirclePause,
   CornerDownLeft,
   FileText,
+  FileSpreadsheet,
   Ledger,
   Lock,
   MessageCircle,
@@ -26,10 +28,12 @@ import type {
 } from "@/types/pages/neo";
 import { cn } from "@/lib/utils";
 import { canvasTitle, docShape, opensInCanvas } from "@/utils/pages/neo/canvas";
+import { useRecon } from "@/hooks/pages/neo/use-recon";
 import { unanswered } from "@/utils/pages/neo/decisions";
-import AskOptions from "./ask-options";
+import AskOptions, { replyOfAsk } from "./ask-options";
+import ReplyBubble from "./reply-bubble";
 import Prose from "./prose";
-import Steps from "./steps";
+import Reasoning from "./reasoning";
 
 type CardProps = {
   message: NeoMessage;
@@ -59,6 +63,8 @@ type Props = CardProps & {
   onRetry?: () => void;
   /** Why Continue can't be offered, if it can't. */
   continueBlocked?: string;
+  /** The run's newest message while it works: a reasoning block stays open. */
+  current?: boolean;
 };
 
 /**
@@ -83,6 +89,8 @@ export const CardBody = ({
   switch (card.kind) {
     case "recon":
       return <ReconCard card={card} onRef={onRef} />;
+    case "recon-report":
+      return <ReconReport card={card} />;
     default:
       return null;
   }
@@ -90,6 +98,7 @@ export const CardBody = ({
 
 /** What kind of document it is, at a glance, in the header and the tile. */
 export const docIcon = (card: NeoCard) => {
+  if (card.kind === "recon-report") return FileSpreadsheet;
   switch (docShape(card)) {
     case "ledger":
       return Ledger;
@@ -163,6 +172,8 @@ const CanvasTile = ({
   open?: boolean;
   onOpen?: () => void;
 }) => {
+  // Recon tiles say where the run stands now, so they follow the store.
+  useRecon();
   const { title, meta } = canvasTitle(card);
   const Icon = docIcon(card);
   return (
@@ -171,7 +182,7 @@ const CanvasTile = ({
       onClick={onOpen}
       aria-pressed={open}
       className={cn(
-        "group flex w-full max-w-[420px] items-center gap-3 rounded-xl border bg-background p-2.5 pr-3 text-left shadow-contact transition-[border-color,box-shadow] hover:border-pi-line-2 hover:shadow-pi-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border",
+        "neo-result-tile group flex w-full max-w-[420px] items-center gap-3 rounded-xl border bg-background p-3 pr-4 text-left shadow-contact transition-[border-color,box-shadow] hover:border-pi-line-2 hover:shadow-pi-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border",
         open
           ? "border-pi-brand-border ring-2 ring-pi-brand-tint"
           : "border-pi-line"
@@ -190,32 +201,22 @@ const CanvasTile = ({
         </span>
       </span>
       <span className="flex flex-none items-center gap-0.5 text-[12px] font-medium text-pi-body group-hover:text-pi-ink">
-        {open ? "Open" : "View"}
-        <ChevronRight className="h-3.5 w-3.5" />
+        {open ? "Viewing" : "Open"}
+        <ChevronRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5 motion-reduce:transform-none" />
       </span>
     </button>
   );
 };
 
 /**
- * A sign-off's buttons say exactly what they do — "Move 6 bills", "Create 9
- * drafts" — counted live from the card. Shared by the thread and the canvas
- * header, so both name the same action.
+ * A sign-off's buttons say exactly what they do, and wait while a question
+ * on the sheet is still open. Shared by the thread and the canvas header,
+ * so both name the same action.
  */
 export const useSignoff = (m: NeoMessage) => {
-  // A reconciliation register's sign-off counts its vouchers.
-  const { runs } = useRecon();
-  const reconCard =
-    m.card?.kind === "recon" && m.card.view === "register" ? m.card : undefined;
-  const reconRun = reconCard && runs.find((r) => r.id === reconCard.runId);
-  const reconTotal = reconRun ? registerCounts(reconRun).total : 0;
   const left = unanswered(m.card);
   const labelOf = (a: NonNullable<NeoMessage["actions"]>[number]) =>
-    left && a.primary
-      ? `Answer ${left} more to continue`
-      : reconRun && a.primary
-        ? `Create ${reconTotal} drafts`
-        : a.label;
+    left && a.primary ? `Answer ${left} more to continue` : a.label;
   const blocked = (a: NonNullable<NeoMessage["actions"]>[number]) =>
     !!left && !!a.primary;
   return { labelOf, blocked };
@@ -233,8 +234,10 @@ export const QuestionsInBox = ({
   onEditCard,
   typed,
   onActive,
+  stage,
 }: {
   m: NeoMessage;
+  stage?: { n: number; of: number };
   onAnswer: (value: string) => void;
   onEditCard: (card: NeoCard) => void;
   typed?: { text: string; n: number };
@@ -242,9 +245,6 @@ export const QuestionsInBox = ({
 }) => {
   const { labelOf, blocked } = useSignoff(m);
   if (m.card?.kind !== "decisions") return null;
-  const primary = m.actions?.find((a) => a.primary);
-  const risk =
-    primary?.risk && primary.risk !== "read" ? RISK[primary.risk] : undefined;
   return (
     <DecisionsCard
       card={m.card}
@@ -252,38 +252,21 @@ export const QuestionsInBox = ({
       onChange={onEditCard}
       typed={typed}
       onActive={onActive}
+      stage={stage}
       footer={
-        <div className="flex flex-col gap-2.5">
-          {risk && (
-            <p className="flex items-start gap-2 text-body-4 leading-5">
-              <risk.icon className="mt-0.5 h-3.5 w-3.5 flex-none text-pi-body" />
-              <span>
-                <span className="font-semibold text-pi-ink">{risk.head}</span>
-                <span className="text-pi-body"> · {risk.note}</span>
-              </span>
-            </p>
-          )}
-          <div className="flex flex-wrap gap-2 max-sm:[&>button]:flex-1 max-sm:[&>button]:justify-center">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-end gap-3">
             {(m.actions || []).map((a) => (
-              <button
+              <Button
                 key={a.id}
                 type="button"
+                variant={a.primary ? "primary" : "outline"}
                 disabled={blocked(a)}
                 onClick={() => onAnswer(a.id)}
-                className={cn(
-                  "flex h-9 items-center gap-1.5 rounded-sm px-3.5 text-[13px] font-semibold transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border",
-                  a.primary
-                    ? "border border-pi-btn-primary-edge bg-pi-btn-fill text-primary-foreground hover:bg-primary-hover"
-                    : "border border-pi-line-2 bg-background text-pi-ink shadow-contact hover:bg-pi-fill"
-                )}
+                className={cn("h-9 px-4", a.primary && "order-last")}
               >
                 {labelOf(a)}
-                {a.primary && a.risk !== "commit" && a.risk !== "external" && (
-                  <kbd className="ml-0.5 flex items-center gap-0.5 rounded-xs bg-primary-foreground/20 px-1 font-sans text-[11px] font-medium text-primary-foreground">
-                    Ctrl <CornerDownLeft className="h-3 w-3" />
-                  </kbd>
-                )}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -324,6 +307,7 @@ const Message = ({
   message: m,
   live,
   running,
+  current,
   paused,
   onAnswer,
   onEditCard,
@@ -391,49 +375,85 @@ const Message = ({
       </div>
     );
 
+  // The guided run's choice is asked by the guide's annotation, not here.
+  const guide =
+    m.card?.kind === "guide-choice" || m.card?.kind === "guide-upload";
+
   const tiled = !!onOpenCanvas && opensInCanvas(m.card);
   const risk =
     primary?.risk && primary.risk !== "read" ? RISK[primary.risk] : undefined;
 
-  const buttons = m.actions && m.actions.length > 0 && (
+  // Answered, the pick is the person's reply: a bubble on their side.
+  const chosen = !live ? m.actions?.find((a) => a.id === m.chosen) : undefined;
+  const sheet =
+    m.card?.kind === "decisions" && !live && chosen ? replyOf(m.card) : null;
+  const reply = sheet
+    ? // "Not now" and the like answer the sheet without its picks.
+      chosen?.primary && sheet.text
+      ? { text: sheet.text, title: undefined, pairs: sheet.pairs }
+      : {
+          text: labelOf(chosen!),
+          title: undefined,
+          pairs: [{ question: sheet.asked, answer: labelOf(chosen!) }],
+        }
+    : m.ask && !live
+      ? replyOfAsk(m.ask) !== undefined
+        ? {
+            text: replyOfAsk(m.ask)!,
+            title: undefined,
+            pairs: [
+              {
+                question: m.ask.question.split("\n")[0],
+                answer: replyOfAsk(m.ask)!,
+              },
+            ],
+          }
+        : null
+      : chosen
+        ? {
+            text: labelOf(chosen),
+            title: undefined,
+            pairs: [
+              {
+                question:
+                  m.card?.kind === "guide-choice"
+                    ? "Which data should this reconciliation use?"
+                    : undefined,
+                answer: labelOf(chosen),
+              },
+            ],
+          }
+        : null;
+
+  const buttons = live && m.actions && m.actions.length > 0 && (
     <div className="flex flex-wrap gap-2 max-sm:[&>button]:flex-1 max-sm:[&>button]:justify-center">
-      {m.actions.map((a) => {
-        const chosen = m.chosen === a.id;
-        if (!live && !chosen) return null;
-        return (
-          <button
-            key={a.id}
-            type="button"
-            disabled={!live || blocked(a)}
-            onClick={() => onAnswer(a.id)}
-            className={cn(
-              "flex h-9 items-center gap-1.5 rounded-sm px-3.5 text-[13px] font-semibold transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border",
-              !live
-                ? "h-7 border border-pi-line px-2.5 text-[12px] font-medium text-pi-body disabled:opacity-100"
-                : a.primary
-                  ? "border border-pi-btn-primary-edge bg-pi-btn-fill text-primary-foreground hover:bg-primary-hover"
-                  : "border border-pi-line-2 bg-background text-pi-ink shadow-contact hover:bg-pi-fill"
-            )}
-          >
-            {!live && "✓ "}
-            {labelOf(a)}
-            {live &&
-              a.primary &&
-              a.risk !== "commit" &&
-              a.risk !== "external" && (
-                <kbd className="ml-0.5 flex items-center gap-0.5 rounded-xs bg-primary-foreground/20 px-1 font-sans text-[11px] font-medium text-primary-foreground">
-                  Ctrl <CornerDownLeft className="h-3 w-3" />
-                </kbd>
-              )}
-          </button>
-        );
-      })}
+      {m.actions.map((a) => (
+        <button
+          key={a.id}
+          type="button"
+          disabled={blocked(a)}
+          onClick={() => onAnswer(a.id)}
+          className={cn(
+            "flex h-9 items-center gap-1.5 rounded-sm px-3.5 text-[13px] font-semibold transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border",
+            a.primary
+              ? "border border-pi-btn-primary-edge bg-pi-btn-fill text-primary-foreground hover:bg-primary-hover"
+              : "border border-pi-line-2 bg-background text-pi-ink shadow-contact hover:bg-pi-fill"
+          )}
+        >
+          {labelOf(a)}
+          {a.primary && a.risk !== "commit" && a.risk !== "external" && (
+            <kbd className="ml-0.5 flex items-center gap-0.5 rounded-xs bg-primary-foreground/20 px-1 font-sans text-[11px] font-medium text-primary-foreground">
+              Ctrl <CornerDownLeft className="h-3 w-3" />
+            </kbd>
+          )}
+        </button>
+      ))}
     </div>
   );
 
   return (
     <div className="flex flex-col gap-3">
-      {m.steps && <Steps steps={m.steps} onRef={onRef} running={running} />}
+      {m.steps && <Reasoning message={m} onRef={onRef} current={current} />}
       {m.text !== undefined && m.text !== "" && (
         <Prose text={m.text} onRef={onRef} streaming={m.streaming} />
       )}
@@ -468,12 +488,10 @@ const Message = ({
       )}
       {m.ask && <AskOptions ask={m.ask} live={live} onPick={onAnswer} />}
       {/* Live, the questions rise out of the prompt box (QuestionsInBox);
-          answered, the thread keeps the record. */}
-      {m.card?.kind === "decisions" && !live && (
-        <DecisionsCard card={m.card} live={false} onChange={onEditCard} />
-      )}
+          answered, the reply reads back on the person's side, below. */}
       {m.card &&
         m.card.kind !== "decisions" &&
+        !guide &&
         (tiled ? (
           <CanvasTile
             card={m.card}
@@ -496,6 +514,7 @@ const Message = ({
         ))}
       {buttons &&
         m.card?.kind !== "decisions" &&
+        !guide &&
         (live && risk ? (
           // The sign-off: what this risks, then the buttons that do it.
           <div className="overflow-hidden rounded-xl border border-pi-line bg-background shadow-contact">
@@ -511,6 +530,14 @@ const Message = ({
         ) : (
           buttons
         ))}
+      {reply && (
+        <ReplyBubble
+          title={reply.title}
+          pairs={"pairs" in reply ? reply.pairs : undefined}
+        >
+          {reply.text}
+        </ReplyBubble>
+      )}
       {m.suggestions && m.suggestions.length > 0 && (
         <div className="flex flex-col items-start gap-1.5 pt-1">
           {m.suggestions.map((s) => (

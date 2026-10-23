@@ -38,6 +38,25 @@ export const JOURNAL_VOUCHER_TYPES = [
 ];
 
 export const LEDGERS: LedgerAccount[] = [
+  ...["Salaries", "Rent", "Depreciation", "Zomato Commission"].map(
+    (name, n) => ({
+      id: `nd-jv-expense-${n}`,
+      name,
+      group: "Indirect Expenses",
+    })
+  ),
+  {
+    id: "nd-jv-payroll",
+    name: "Salaries Payable",
+    group: "Current Liabilities",
+  },
+  { id: "nd-jv-rent", name: "Rent Payable", group: "Current Liabilities" },
+  {
+    id: "nd-jv-depreciation",
+    name: "Accumulated Depreciation",
+    group: "Fixed Assets",
+  },
+  { id: "nd-jv-zomato", name: "Zomato Receivable", group: "Sundry Debtors" },
   {
     id: "led-insurance-exp",
     name: "Insurance Expense A/c",
@@ -86,7 +105,11 @@ export const LEDGERS: LedgerAccount[] = [
   // land on plainer ledger names than the masters above. Kept so a seeded
   // voucher opens with its ledger selected rather than blank.
   { id: "led-bank-charges", name: "Bank Charges", group: "Indirect Expenses" },
-  { id: "led-general-exp", name: "General Expenses", group: "Indirect Expenses" },
+  {
+    id: "led-general-exp",
+    name: "General Expenses",
+    group: "Indirect Expenses",
+  },
   { id: "led-bank", name: "Bank", group: "Bank Accounts" },
   { id: "led-cash", name: "Cash", group: "Cash-in-hand" },
   { id: "led-ap", name: "Accounts Payable", group: "Sundry Creditors" },
@@ -101,6 +124,8 @@ export const COST_CENTRE_CLASSES: CostCentreClass[] = [
 ];
 
 export const COST_CENTRES: CostCentre[] = [
+  { id: "nd-cc-jp-nagar", name: "JP Nagar", classId: "ccc-region" },
+  { id: "nd-cc-koramangala", name: "Koramangala", classId: "ccc-region" },
   { id: "cc-sales", name: "Sales", classId: "ccc-department" },
   { id: "cc-operations", name: "Operations", classId: "ccc-department" },
   { id: "cc-finance", name: "Finance", classId: "ccc-department" },

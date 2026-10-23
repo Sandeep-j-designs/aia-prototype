@@ -1,14 +1,15 @@
 import type { NeoAttachment, NeoContext, NeoTask } from "@/types/pages/neo";
 import reconSetup from "./recon-setup";
 import reconRun from "./recon-run";
-import reconClose from "./recon-close";
-import reconRules from "./recon-rules";
+import reconReview from "./recon-review";
+import reconExport from "./recon-export";
+import reconEdit from "./recon-edit";
 
 /**
- * Everything Neo can do in phase one (21 Oct 2026): three-way
- * reconciliation and nothing else. Each task is one job a person hands the
- * recon agent (config/pages/neo/skills.ts): set up, reconcile a period,
- * close it, review what it learned. Order breaks a tie.
+ * Everything Neo can do in phase one: three-way reconciliation to the AiA
+ * 2.0 PRD (aligned 21 Oct 2026). Each task is one job a person hands Neo
+ * (config/pages/neo/skills.ts): set up, reconcile a period, review it,
+ * change it and run it again, export it. Order breaks a tie.
  *
  * DEV: this registry is the scripted stand-in for the model's planner. With a
  * model behind `POST /api/neo/runs`, the prompt goes to it with the jobs as
@@ -17,8 +18,9 @@ import reconRules from "./recon-rules";
  */
 export const NEO_TASKS: NeoTask[] = [
   reconSetup,
-  reconClose,
-  reconRules,
+  reconEdit,
+  reconExport,
+  reconReview,
   reconRun,
 ];
 
@@ -29,8 +31,9 @@ export const NEO_TASKS: NeoTask[] = [
 export const NEO_EXAMPLES = [
   "Set up reconciliation",
   "Reconcile September",
-  "Close September with the 1–7 Oct statement",
-  "What has Neo learned?",
+  "Defer E1, payout file due 3 Oct",
+  "Submit September for review",
+  "Export September",
 ];
 
 const words = (s: string) =>

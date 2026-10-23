@@ -1,5 +1,13 @@
 import type { NeoCard } from "@/types/pages/neo";
-import { getRun, registerCounts, rulesOf } from "@/hooks/pages/neo/use-recon";
+import {
+  REVIEW_LABEL,
+  configOf,
+  currentVersion,
+  getRun,
+  liveSources,
+  readiness,
+} from "@/hooks/pages/neo/use-recon";
+import { reportName } from "@/utils/pages/neo/recon-workbook";
 
 /**
  * Which of Neo's cards are documents, opened beside the chat rather than
@@ -8,63 +16,57 @@ import { getRun, registerCounts, rulesOf } from "@/hooks/pages/neo/use-recon";
  * tile for it and the sign-off underneath. A decisions sheet stays in the
  * prompt box.
  */
-export const opensInCanvas = (card?: NeoCard) => card?.kind === "recon";
+export const opensInCanvas = (card?: NeoCard) =>
+  card?.kind === "recon" || card?.kind === "recon-report";
 
 /** The tile's name and one-line summary for a document card. */
 export const canvasTitle = (card: NeoCard): { title: string; meta: string } => {
   switch (card.kind) {
     case "recon": {
+      if (card.view === "config") {
+        const cfg = configOf(card.company);
+        return {
+          title: "Reconciliation configuration",
+          meta: cfg
+            ? `Version ${cfg.version} · ${cfg.currency} · ${cfg.timezone}`
+            : "",
+        };
+      }
       const run = card.runId ? getRun(card.runId) : undefined;
-      const c = run && registerCounts(run);
+      const v = run && currentVersion(run);
       const views = {
-        policy: ["Reconciliation policy", "Drafted from Jun–Aug vouchers"],
-        reports: [
-          "Reports",
+        sources: [
+          "Sources and validation",
           run
-            ? `${run.docs.length} files · ${run.docs.filter((d) => d.status === "read").length} read`
+            ? `${liveSources(run).length} sources · ${readiness(run).rejected} rows rejected`
             : "",
         ],
-        payouts: [
-          "Payouts to bank",
-          run
-            ? `${run.payouts.filter((p) => p.bank !== undefined).length} proved to the bank`
+        results: [
+          `Reconciliation · ${run?.period.label || ""}`,
+          v
+            ? `Version ${v.n} · ${v.groups.length} groups · ${v.exceptions.length} exceptions`
             : "",
         ],
-        sales: [
-          "Sales to payouts",
-          run
-            ? `${new Set(run.sales.map((x) => x.date)).size} days × 6 channels`
-            : "",
-        ],
-        bank: [
-          "Bank lines",
-          run ? `${run.bank.length} rows accounted · HDFC ·0418` : "",
-        ],
-        register: [
-          "Entry register",
-          c ? `${c.total} vouchers · ${c.suspense} to suspense` : "",
-        ],
-        drafts: [
-          "Reconciliation drafts",
-          run
-            ? `${run.createdItemIds.length} sales · ${run.createdBankKeys.length} bank lines`
-            : "",
-        ],
-        close: [
-          `Close ${run?.period.replace(" 2026", "") || "the period"}`,
-          run?.closed
-            ? "Closed"
-            : run?.evidence
-              ? "Evidence read"
-              : "Not started",
-        ],
-        rules: [
-          "What Neo has learned",
-          `${rulesOf(card.company).length} rules for this client`,
+        review: [
+          "Review record",
+          v ? `Version ${v.n} · ${REVIEW_LABEL[v.review]}` : "",
         ],
       } as const;
       const [title, meta] = views[card.view];
       return { title, meta };
+    }
+    case "recon-report": {
+      const run = getRun(card.runId);
+      const v = run?.versions.find((x) => x.n === card.version);
+      const latest = run && currentVersion(run);
+      if (!run || !v) return { title: "Reconciliation report", meta: "" };
+      return {
+        title: reportName(run, v),
+        meta:
+          latest && latest.n > v.n
+            ? `Version ${v.n} · superseded by version ${latest.n}`
+            : `Version ${v.n} · ${v.groups.length} groups · ${v.exceptions.filter((e) => !e.deferred).length} open · ${REVIEW_LABEL[v.review]}`,
+      };
     }
     default:
       return { title: "Document", meta: "" };
@@ -77,9 +79,11 @@ export const canvasTitle = (card: NeoCard): { title: string; meta: string } => {
  * store, so the latest showing is the document; earlier tiles open it too.
  */
 export const canvasKey = (card: NeoCard): string | null =>
-  card.kind === "recon"
-    ? `recon:${card.view}:${card.view === "policy" || card.view === "rules" ? card.company : card.runId}`
-    : null;
+  card.kind === "recon-report"
+    ? `recon-report:${card.runId}:${card.version}`
+    : card.kind === "recon"
+      ? `recon:${card.view}:${card.view === "config" ? card.company : card.runId}`
+      : null;
 
 /**
  * The three shapes a document takes: a ledger of rows and money, a
@@ -89,9 +93,10 @@ export const canvasKey = (card: NeoCard): string | null =>
 export type DocShape = "ledger" | "rulebook" | "statement" | "record";
 
 export const docShape = (card: NeoCard): DocShape => {
+  if (card.kind === "recon-report") return "ledger";
   if (card.kind !== "recon") return "record";
-  if (card.view === "policy" || card.view === "rules") return "rulebook";
-  if (card.view === "close") return "statement";
+  if (card.view === "config") return "rulebook";
+  if (card.view === "review") return "statement";
   return "ledger";
 };
 

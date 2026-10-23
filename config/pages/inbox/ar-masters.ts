@@ -15,6 +15,7 @@
  */
 
 export const INCOME_LEDGERS = [
+  "Restaurant Sales",
   "Sales - Edible Oil 5%",
   "Sales - De-oiled Cake",
   "Sales - Acid Oil",
@@ -31,6 +32,12 @@ export const INCOME_LEDGERS = [
  * creating it, the same way the bill sheet handles an unknown vendor.
  */
 export const CUSTOMERS = [
+  "Walk-in Customers",
+  "Orion Tech Park",
+  "Bengaluru Events Co",
+  "Zomato Receivable",
+  "Swiggy Receivable",
+  "Ownly Receivable",
   "Annapoorna Wholesale",
   "Chennai Oil Depot",
   "Hotel Mayura Group",

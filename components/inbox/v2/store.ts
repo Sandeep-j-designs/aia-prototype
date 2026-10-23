@@ -8,6 +8,7 @@ import type { InboxItem } from "@/types/pages/inbox";
 import { mockAutoApprovalBills } from "@/config/pages/inbox/mock-trust";
 import { AI_DOCUMENTS } from "@/config/pages/inbox/mock-ai-documents";
 import { MOCK_CUSTOMER_PO } from "@/config/pages/inbox/mock-purchase-order";
+import { NANDHINI_DOCUMENTS } from "@/config/pages/inbox/mock-nandhini";
 import { runComplianceChecks } from "@/hooks/pages/inbox/use-compliance";
 import { logActivity } from "@/hooks/pages/inbox/use-activity";
 import {
@@ -431,10 +432,7 @@ export const itemFromMock = (x: InboxItem, n: number): Item => {
   // TDS comes off what is payable; rounding goes on. RCM is our own
   // liability, not the vendor's dues, so it stays out of the amount.
   const tds = (b?.tds || []).reduce((s, l) => s + l.amount, 0);
-  const adjustments = (b?.adjustments || []).reduce(
-    (s, l) => s + l.amount,
-    0
-  );
+  const adjustments = (b?.adjustments || []).reduce((s, l) => s + l.amount, 0);
   const f: Form = {
     gst: "Karnataka HQ",
     voucherType:
@@ -584,15 +582,37 @@ function seed(): State {
   acme.routingAddress = "sahyadri-precision@inbox.aiaccountant.app";
   acme.form = { ...acme.form, gst: "Pune HQ" };
   items.push(acme);
+  NANDHINI_DOCUMENTS.forEach(({ item: mock, approved }, n) => {
+    const item = fromMock(mock, 1600 + n);
+    item.company = "nandhini";
+    item.routingAddress = "nandhini-deluxe@inbox.aiaccountant.app";
+    item.form.gst = "JP Nagar";
+    if (item.route === "JV") {
+      item.form.date = "2026-10-20";
+      item.form.voucherNo = `ND/JV/26-27/${mock.id.split("-").at(-1)}`;
+      item.form.costCentre = "JP Nagar";
+    }
+    if (approved) {
+      item.status = "Approved";
+      item.snapshot = structuredClone(item.form);
+      item.arSnapshot = item.arSheet ? structuredClone(item.arSheet) : undefined;
+      item.doneAt = "2026-10-21T09:30:00Z";
+      item.doneBy = actor;
+    }
+    items.push(item);
+  });
   return {
     version: 2,
-    company: "shakun",
+    // Nandhini Deluxe opens by default (21 Oct 2026): it is the client
+    // with settlement data, so Neo's reconciliation works from the start.
+    company: "nandhini",
     companies: structuredClone(SEED_COMPANIES),
     permissions: [...routes],
     items,
     events: [],
     tourDone: false,
     queue: [],
+    startedCompanies: ["nandhini"],
     emailSuffix: {},
     waCompany: "shakun",
     // First run is day zero, so a fresh prototype opens inside the window with
@@ -788,7 +808,7 @@ function seedFor(scenario: Scenario): State {
   // the templates `demoUploadDocuments` cuts batches from.
   return {
     ...base,
-    items: base.items.filter((item) => item.priorVoucher || !seedable(item)),
+    items: base.items.filter((item) => item.company === "nandhini" || item.priorVoucher || !seedable(item)),
   };
 }
 

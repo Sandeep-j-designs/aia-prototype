@@ -26,9 +26,31 @@ export const mockAutoApproveSettings = (): AutoApproveSettings[] => [
   // Inbox-first agents prepare; approval remains a separate human action.
   { company: "shakun", enabled: false, minApprovals: 5, amountBand: 2 },
   { company: "acme", enabled: false, minApprovals: 5, amountBand: 2 },
+  { company: "nandhini", enabled: false, minApprovals: 5, amountBand: 2 },
 ];
 
 export const mockTrustPatterns = (): TrustPattern[] => [
+  ...[
+    {
+      vendor: "Akshayakalpa Dairy (creditor)",
+      ledger: "Purchase – Ingredients",
+      usualAmount: 12600,
+    },
+    { vendor: "BESCOM", ledger: "Electricity", usualAmount: 28450 },
+    {
+      vendor: "Bharti Airtel Ltd",
+      ledger: "Internet Charges",
+      usualAmount: 2360,
+    },
+  ].map((p, n) => ({
+    ...p,
+    id: `nd-trust-${n}`,
+    company: "nandhini",
+    approvals: 6 + n,
+    edits: 0,
+    streak: 6 + n,
+    lastSeenAt: daysAgo(n + 1),
+  })),
   {
     id: "trust-airtel-bb",
     company: "shakun",

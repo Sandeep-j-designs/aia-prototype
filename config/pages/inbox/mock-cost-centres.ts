@@ -61,6 +61,18 @@ export const COST_CATEGORIES: CostCategory[] = [
 
 export const COST_CENTRES: CostCentre[] = [
   {
+    id: "nd-cc-jp-nagar",
+    name: "JP Nagar",
+    category: "Region",
+    parentId: null,
+  },
+  {
+    id: "nd-cc-koramangala",
+    name: "Koramangala",
+    category: "Region",
+    parentId: null,
+  },
+  {
     id: "cc-admin",
     name: "Administration",
     category: "Department",
