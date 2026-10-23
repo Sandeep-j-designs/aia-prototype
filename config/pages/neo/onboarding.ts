@@ -1,4 +1,5 @@
 import type { TourStep } from "@/types/pages/guide";
+import { asset } from "@/lib/base-path";
 
 /** Launch copy and the simplified product animation's media-time captions.
  * Editable source: ../Neo Launch Motion/Product happy flow/Neo-Happy-Flow.tsrct.
@@ -14,8 +15,8 @@ export const RECON_WELCOME = {
     "Your bank statements, payout reports and accounting records, matched in minutes instead of hours.",
   primary: "Try reconciliation",
   media: {
-    video: "/onboarding/neo-happy-flow.mp4",
-    poster: "/onboarding/neo-happy-flow-poster.png",
+    video: asset("/onboarding/neo-happy-flow.mp4"),
+    poster: asset("/onboarding/neo-happy-flow-poster.png"),
     alt: "A simplified animation of Neo: type “Match September payouts with my bank and books”, Neo checks the bank statement, payout reports and accounting records, then opens a sample reconciliation report. Happy-path illustration with setup and exception handling omitted.",
     pause: "Pause preview",
     play: "Play preview",
